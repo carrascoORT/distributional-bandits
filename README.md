@@ -1,2 +1,3 @@
-# distributional-bandits
-Experiment repository for the paper "Concave Statistical Utility Maximization Bandits via Influence-Function Gradients"
+# Distributional Bandits
+
+Code for experiments on bandit optimization with concave distributional utilities.
