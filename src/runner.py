@@ -8,30 +8,17 @@ def run_single_experiment(instance, algorithm, T: int, seed: int = 123, utility=
     """
     Run one trajectory of a bandit algorithm on one bandit instance.
 
-    Parameters
-    ----------
-    instance : BanditInstance
-        The bandit environment.
-    algorithm : BanditAlgorithm
-        The bandit algorithm.
-    T : int
-        Time horizon.
-    seed : int
-        Random seed.
-    utility : optional
-        Utility object with method utility.value(instance, w).
-
-    Returns
-    -------
-    results : dict
-        Dictionary containing actions, rewards, weight trajectory,
-        and optionally utility trajectory.
+    Returns actions, rewards, weights, and optionally utility-based summaries.
     """
     if T <= 0:
         raise ValueError("T must be a positive integer.")
 
     rng = np.random.default_rng(seed)
-    algorithm.reset(rng)
+
+    try:
+        algorithm.reset(rng, instance=instance)
+    except TypeError:
+        algorithm.reset(rng)
 
     actions = np.zeros(T, dtype=int)
     rewards = np.zeros(T, dtype=float)
@@ -39,8 +26,14 @@ def run_single_experiment(instance, algorithm, T: int, seed: int = 123, utility=
 
     if utility is not None:
         utility_values = np.zeros(T, dtype=float)
+        average_weights = np.zeros((T, instance.K), dtype=float)
+        avg_weight_utility_values = np.zeros(T, dtype=float)
     else:
         utility_values = None
+        average_weights = None
+        avg_weight_utility_values = None
+
+    running_weight_sum = np.zeros(instance.K, dtype=float)
 
     for t in range(T):
         action = algorithm.select_action()
@@ -56,6 +49,12 @@ def run_single_experiment(instance, algorithm, T: int, seed: int = 123, utility=
         if utility is not None:
             utility_values[t] = utility.value(instance, current_w)
 
+            running_weight_sum += current_w
+            avg_w_t = running_weight_sum / (t + 1)
+
+            average_weights[t] = avg_w_t
+            avg_weight_utility_values[t] = utility.value(instance, avg_w_t)
+
     results = {
         "instance_name": instance.name,
         "algorithm_name": algorithm.name,
@@ -68,14 +67,13 @@ def run_single_experiment(instance, algorithm, T: int, seed: int = 123, utility=
 
     if utility_values is not None:
         results["utility_values"] = utility_values
+        results["average_weights"] = average_weights
+        results["avg_weight_utility_values"] = avg_weight_utility_values
 
     return results
 
 
 def save_results_npz(results: dict, filepath):
-    """
-    Save experiment results to a .npz file.
-    """
     filepath = Path(filepath)
     filepath.parent.mkdir(parents=True, exist_ok=True)
 
@@ -91,15 +89,15 @@ def save_results_npz(results: dict, filepath):
 
     if "utility_values" in results:
         payload["utility_values"] = results["utility_values"]
+    if "average_weights" in results:
+        payload["average_weights"] = results["average_weights"]
+    if "avg_weight_utility_values" in results:
+        payload["avg_weight_utility_values"] = results["avg_weight_utility_values"]
 
     np.savez(filepath, **payload)
 
 
 def save_metadata_json(results: dict, filepath):
-    """
-    Save only metadata to a small JSON file.
-    Useful for quick inspection.
-    """
     filepath = Path(filepath)
     filepath.parent.mkdir(parents=True, exist_ok=True)
 
@@ -110,6 +108,8 @@ def save_metadata_json(results: dict, filepath):
         "seed": int(results["seed"]),
         "K": int(results["weights"].shape[1]),
         "has_utility_values": "utility_values" in results,
+        "has_average_weights": "average_weights" in results,
+        "has_avg_weight_utility_values": "avg_weight_utility_values" in results,
     }
 
     with open(filepath, "w", encoding="utf-8") as f:

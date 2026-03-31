@@ -1,0 +1,29 @@
+{
+  "experiment_name": "variance_suite",
+  "instance_name": "beta_mixture_4",
+  "utility_name": "variance",
+  "algorithm_names": [
+    "variance_mirror_ascent",
+    "variance_if_ascent"
+  ],
+  "T": 500,
+  "seeds": [
+    101,
+    202,
+    303,
+    404,
+    505
+  ],
+  "n_seeds": 5,
+  "gamma": 0.02,
+  "w_star": [
+    0.4800000000000002,
+    0.4799999999999995,
+    0.02000000000000006,
+    0.020000000000000302
+  ],
+  "u_star": 0.10148558758314846,
+  "optimizer_success": true,
+  "optimizer_message": "Optimization terminated successfully",
+  "config_path": "configs\\variance_suite.yaml"
+}
