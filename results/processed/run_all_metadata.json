@@ -1,0 +1,16 @@
+{
+  "instance_name": "toy_uniform_instance",
+  "algorithm_names": [
+    "simple_mirror_ascent",
+    "uniform"
+  ],
+  "T": 500,
+  "seeds": [
+    101,
+    202,
+    303,
+    404,
+    505
+  ],
+  "n_seeds": 5
+}

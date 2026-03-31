@@ -1,0 +1,7 @@
+{
+  "instance_name": "toy_uniform_instance",
+  "algorithm_name": "uniform",
+  "T": 500,
+  "seed": 303,
+  "K": 3
+}
