@@ -1,0 +1,7 @@
+{
+  "instance_name": "toy_uniform_instance",
+  "algorithm_name": "simple_mirror_ascent",
+  "T": 200,
+  "seed": 123,
+  "K": 3
+}
