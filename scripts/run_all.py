@@ -13,14 +13,13 @@ sys.path.append(str(ROOT))
 from src.arms import UniformArm
 from src.instance import BanditInstance
 from src.algorithms import SimpleMirrorAscent, UniformPolicy
+from src.utilities import VarianceUtility
+from src.offline_opt import solve_variance_optimum
 from src.runner import run_single_experiment, save_results_npz, save_metadata_json
 from src.plots import save_figure
 
 
 def build_instance():
-    """
-    Build a small toy instance.
-    """
     arms = [
         UniformArm(0.0, 1.0),
         UniformArm(0.2, 0.8),
@@ -30,9 +29,6 @@ def build_instance():
 
 
 def build_algorithms(K: int):
-    """
-    Return a dictionary of algorithms to compare.
-    """
     return {
         "simple_mirror_ascent": SimpleMirrorAscent(K=K, eta=0.2),
         "uniform": UniformPolicy(K=K),
@@ -40,16 +36,6 @@ def build_algorithms(K: int):
 
 
 def plot_mean_weight_trajectories_by_algorithm(weight_dict, instance_name):
-    """
-    Plot mean weight trajectories for each algorithm.
-
-    Parameters
-    ----------
-    weight_dict : dict
-        Maps algorithm_name -> list of weight arrays of shape (T, K).
-    instance_name : str
-        Name of the bandit instance.
-    """
     n_algorithms = len(weight_dict)
 
     fig, axes = plt.subplots(
@@ -59,8 +45,8 @@ def plot_mean_weight_trajectories_by_algorithm(weight_dict, instance_name):
     for row, (algorithm_name, weight_list) in enumerate(weight_dict.items()):
         ax = axes[row, 0]
 
-        weights = np.stack(weight_list, axis=0)   # (n_seeds, T, K)
-        mean_weights = weights.mean(axis=0)       # (T, K)
+        weights = np.stack(weight_list, axis=0)
+        mean_weights = weights.mean(axis=0)
 
         T, K = mean_weights.shape
 
@@ -77,22 +63,35 @@ def plot_mean_weight_trajectories_by_algorithm(weight_dict, instance_name):
     return fig, axes
 
 
-def plot_mean_cumulative_rewards_by_algorithm(reward_dict, instance_name):
-    """
-    Plot mean cumulative rewards for each algorithm.
-    """
+def plot_mean_utility_by_algorithm(utility_dict, u_star, instance_name):
     fig, ax = plt.subplots(figsize=(8, 4.5))
 
-    for algorithm_name, reward_list in reward_dict.items():
-        rewards = np.stack(reward_list, axis=0)          # (n_seeds, T)
-        cum_rewards = np.cumsum(rewards, axis=1)         # (n_seeds, T)
-        mean_cum_rewards = cum_rewards.mean(axis=0)      # (T,)
+    for algorithm_name, utility_list in utility_dict.items():
+        utilities = np.stack(utility_list, axis=0)
+        mean_utilities = utilities.mean(axis=0)
+        ax.plot(mean_utilities, label=algorithm_name)
 
-        ax.plot(mean_cum_rewards, label=algorithm_name)
+    ax.axhline(u_star, linestyle="--", label="optimal utility")
+    ax.set_xlabel("t")
+    ax.set_ylabel("mean utility")
+    ax.set_title(f"Mean variance utility on {instance_name}")
+    ax.legend()
+    fig.tight_layout()
+
+    return fig, ax
+
+
+def plot_mean_utility_gap_by_algorithm(gap_dict, instance_name):
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+
+    for algorithm_name, gap_list in gap_dict.items():
+        gaps = np.stack(gap_list, axis=0)
+        mean_gaps = gaps.mean(axis=0)
+        ax.plot(mean_gaps, label=algorithm_name)
 
     ax.set_xlabel("t")
-    ax.set_ylabel("mean cumulative reward")
-    ax.set_title(f"Mean cumulative rewards on {instance_name}")
+    ax.set_ylabel("mean utility gap")
+    ax.set_title(f"Mean utility gap on {instance_name}")
     ax.legend()
     fig.tight_layout()
 
@@ -100,11 +99,12 @@ def plot_mean_cumulative_rewards_by_algorithm(reward_dict, instance_name):
 
 
 def main():
-    # Parameters
     T = 500
     seeds = [101, 202, 303, 404, 505]
 
     instance = build_instance()
+    utility = VarianceUtility()
+    w_star, u_star, opt_result = solve_variance_optimum(instance, utility)
     algorithms = build_algorithms(instance.K)
 
     raw_dir = ROOT / "results" / "raw" / "run_all"
@@ -117,7 +117,8 @@ def main():
 
     summary_rows = []
     weight_dict = {name: [] for name in algorithms}
-    reward_dict = {name: [] for name in algorithms}
+    utility_dict = {name: [] for name in algorithms}
+    gap_dict = {name: [] for name in algorithms}
 
     for algorithm_name in algorithms:
         algo_raw_dir = raw_dir / algorithm_name
@@ -131,15 +132,21 @@ def main():
                 algorithm=algorithm,
                 T=T,
                 seed=seed,
+                utility=utility,
             )
 
-            # Save one file per seed
             save_results_npz(results, algo_raw_dir / f"seed_{seed}.npz")
             save_metadata_json(results, algo_raw_dir / f"seed_{seed}.json")
 
             final_weights = results["weights"][-1]
-            avg_reward = float(np.mean(results["rewards"]))
-            cum_reward = float(np.sum(results["rewards"]))
+            utility_values = results["utility_values"]
+            utility_gap_traj = u_star - utility_values
+
+            final_utility = float(utility_values[-1])
+            mean_utility = float(np.mean(utility_values))
+            final_gap = float(utility_gap_traj[-1])
+            mean_gap = float(np.mean(utility_gap_traj))
+            l1_error = float(np.sum(np.abs(final_weights - w_star)))
 
             summary_rows.append(
                 {
@@ -147,41 +154,52 @@ def main():
                     "instance_name": results["instance_name"],
                     "algorithm_name": results["algorithm_name"],
                     "T": results["T"],
-                    "avg_reward": avg_reward,
-                    "cum_reward": cum_reward,
+                    "u_star": float(u_star),
+                    "final_utility": final_utility,
+                    "mean_utility": mean_utility,
+                    "final_gap": final_gap,
+                    "mean_gap": mean_gap,
+                    "l1_error_to_w_star": l1_error,
                     **{
                         f"final_w_{k}": float(final_weights[k])
+                        for k in range(instance.K)
+                    },
+                    **{
+                        f"w_star_{k}": float(w_star[k])
                         for k in range(instance.K)
                     },
                 }
             )
 
             weight_dict[algorithm_name].append(results["weights"])
-            reward_dict[algorithm_name].append(results["rewards"])
+            utility_dict[algorithm_name].append(utility_values)
+            gap_dict[algorithm_name].append(utility_gap_traj)
 
             print(
                 f"Finished algorithm={algorithm_name}, seed={seed} | "
-                f"avg_reward={avg_reward:.4f} | "
-                f"final_weights={np.round(final_weights, 4)}"
+                f"final_gap={final_gap:.6f} | "
+                f"l1_error={l1_error:.6f}"
             )
 
-    # Save summary table
     summary_df = pd.DataFrame(summary_rows)
     summary_path = processed_dir / "run_all_summary.csv"
     summary_df.to_csv(summary_path, index=False)
 
-    # Save batch metadata
     batch_metadata = {
         "instance_name": instance.name,
+        "utility_name": "variance",
         "algorithm_names": list(algorithms.keys()),
         "T": T,
         "seeds": seeds,
         "n_seeds": len(seeds),
+        "w_star": w_star.tolist(),
+        "u_star": float(u_star),
+        "optimizer_success": bool(opt_result.success),
+        "optimizer_message": str(opt_result.message),
     }
     with open(processed_dir / "run_all_metadata.json", "w", encoding="utf-8") as f:
         json.dump(batch_metadata, f, indent=2)
 
-    # Save aggregated weight figure
     fig1, axes1 = plot_mean_weight_trajectories_by_algorithm(
         weight_dict=weight_dict,
         instance_name=instance.name,
@@ -189,15 +207,24 @@ def main():
     save_figure(fig1, fig_dir / "run_all_mean_weights_by_algorithm.png")
     plt.close(fig1)
 
-    # Save aggregated cumulative reward figure
-    fig2, ax2 = plot_mean_cumulative_rewards_by_algorithm(
-        reward_dict=reward_dict,
+    fig2, ax2 = plot_mean_utility_by_algorithm(
+        utility_dict=utility_dict,
+        u_star=u_star,
         instance_name=instance.name,
     )
-    save_figure(fig2, fig_dir / "run_all_mean_cumulative_rewards.png")
+    save_figure(fig2, fig_dir / "run_all_mean_utility.png")
     plt.close(fig2)
 
+    fig3, ax3 = plot_mean_utility_gap_by_algorithm(
+        gap_dict=gap_dict,
+        instance_name=instance.name,
+    )
+    save_figure(fig3, fig_dir / "run_all_mean_utility_gap.png")
+    plt.close(fig3)
+
     print("\nBatch experiment completed.")
+    print(f"Optimal weights w*: {np.round(w_star, 6)}")
+    print(f"Optimal utility U(w*): {u_star:.6f}")
     print(f"Raw per-seed results saved to: {raw_dir}")
     print(f"Summary CSV saved to: {summary_path}")
     print(f"Figures saved to: {fig_dir}")

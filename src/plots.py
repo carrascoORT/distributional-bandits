@@ -6,19 +6,6 @@ from pathlib import Path
 def plot_weight_trajectories(results: dict, title: str = None, show: bool = True):
     """
     Plot the weight trajectories stored in a results dictionary.
-
-    Parameters
-    ----------
-    results : dict
-        Output of run_single_experiment.
-    title : str, optional
-        Plot title.
-    show : bool
-        Whether to call plt.show().
-
-    Returns
-    -------
-    fig, ax : matplotlib figure and axes
     """
     weights = np.asarray(results["weights"])
     T, K = weights.shape
@@ -70,6 +57,33 @@ def plot_cumulative_rewards(results: dict, title: str = None, show: bool = True)
     return fig, ax
 
 
+def plot_utility_trajectory(results: dict, title: str = None, show: bool = True):
+    """
+    Plot utility values from a results dictionary.
+    """
+    if "utility_values" not in results:
+        raise ValueError("results does not contain 'utility_values'.")
+
+    utility_values = np.asarray(results["utility_values"])
+
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    ax.plot(utility_values)
+
+    ax.set_xlabel("t")
+    ax.set_ylabel("utility")
+
+    if title is None:
+        title = f"Utility - {results['algorithm_name']} on {results['instance_name']}"
+    ax.set_title(title)
+
+    fig.tight_layout()
+
+    if show:
+        plt.show()
+
+    return fig, ax
+
+
 def load_results_npz(filepath):
     """
     Load a .npz results file and return a standard dictionary.
@@ -86,6 +100,9 @@ def load_results_npz(filepath):
             "rewards": data["rewards"],
             "weights": data["weights"],
         }
+
+        if "utility_values" in data.files:
+            results["utility_values"] = data["utility_values"]
 
     return results
 

@@ -3,5 +3,6 @@
   "algorithm_name": "uniform",
   "T": 500,
   "seed": 303,
-  "K": 3
+  "K": 3,
+  "has_utility_values": true
 }
