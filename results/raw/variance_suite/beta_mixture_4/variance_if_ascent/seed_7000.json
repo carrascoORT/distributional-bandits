@@ -1,0 +1,10 @@
+{
+  "instance_name": "beta_mixture_4",
+  "algorithm_name": "variance_if_ascent",
+  "T": 1500,
+  "seed": 7000,
+  "K": 4,
+  "has_utility_values": true,
+  "has_average_weights": true,
+  "has_avg_weight_utility_values": true
+}

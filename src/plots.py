@@ -84,38 +84,67 @@ def plot_utility_trajectory(results: dict, title: str = None, show: bool = True)
     return fig, ax
 
 
-def plot_mean_and_iqr(ax, trajectories, label: str):
+def _mean_and_standard_error(trajectories):
     """
-    Plot mean trajectory with q25-q75 band on an existing axis.
+    Compute the pointwise mean and standard error across runs.
+
+    Parameters
+    ----------
+    trajectories : array-like, shape (n_runs, T)
+
+    Returns
+    -------
+    mean_x : ndarray, shape (T,)
+    lower : ndarray, shape (T,)
+        mean - standard error
+    upper : ndarray, shape (T,)
+        mean + standard error
+    """
+    x = np.asarray(trajectories)
+    if x.ndim != 2:
+        raise ValueError("trajectories must have shape (n_runs, T).")
+
+    n_runs = x.shape[0]
+    mean_x = np.mean(x, axis=0)
+
+    if n_runs == 1:
+        return mean_x, mean_x, mean_x
+
+    std_x = np.std(x, axis=0, ddof=1)
+    se_x = std_x / np.sqrt(n_runs)
+
+    lower = mean_x - se_x
+    upper = mean_x + se_x
+    return mean_x, lower, upper
+
+
+def plot_mean_with_se(ax, trajectories, label: str, alpha: float = 0.20):
+    """
+    Plot the mean trajectory with standard error bands on an existing axis.
 
     Parameters
     ----------
     ax : matplotlib axis
     trajectories : array-like, shape (n_runs, T)
     label : str
+    alpha : float, default=0.20
+        Transparency of the standard error band.
     """
-    x = np.asarray(trajectories)
-    if x.ndim != 2:
-        raise ValueError("trajectories must have shape (n_runs, T).")
-
-    mean_x = np.mean(x, axis=0)
-    q25 = np.quantile(x, 0.25, axis=0)
-    q75 = np.quantile(x, 0.75, axis=0)
-
-    t = np.arange(x.shape[1])
+    mean_x, lower, upper = _mean_and_standard_error(trajectories)
+    t = np.arange(len(mean_x))
     ax.plot(t, mean_x, label=label)
-    ax.fill_between(t, q25, q75, alpha=0.25)
+    ax.fill_between(t, lower, upper, alpha=alpha)
 
 
 def plot_mean_utility_by_algorithm(utility_dict, u_star, instance_name, show: bool = True):
     """
-    Plot mean utility with q25-q75 bands for each algorithm.
+    Plot mean utility with standard error bands for each algorithm.
     """
     fig, ax = plt.subplots(figsize=(8, 4.5))
 
     for algorithm_name, utility_list in utility_dict.items():
-        utilities = np.stack(utility_list, axis=0)   # (n_seeds, T)
-        plot_mean_and_iqr(ax, utilities, label=algorithm_name)
+        utilities = np.stack(utility_list, axis=0)
+        plot_mean_with_se(ax, utilities, label=algorithm_name)
 
     ax.axhline(u_star, linestyle="--", label="optimal utility")
     ax.set_xlabel("t")
@@ -132,13 +161,13 @@ def plot_mean_utility_by_algorithm(utility_dict, u_star, instance_name, show: bo
 
 def plot_mean_utility_gap_by_algorithm(gap_dict, instance_name, show: bool = True):
     """
-    Plot mean utility gap with q25-q75 bands for each algorithm.
+    Plot mean utility gap with standard error bands for each algorithm.
     """
     fig, ax = plt.subplots(figsize=(8, 4.5))
 
     for algorithm_name, gap_list in gap_dict.items():
-        gaps = np.stack(gap_list, axis=0)   # (n_seeds, T)
-        plot_mean_and_iqr(ax, gaps, label=algorithm_name)
+        gaps = np.stack(gap_list, axis=0)
+        plot_mean_with_se(ax, gaps, label=algorithm_name)
 
     ax.set_xlabel("t")
     ax.set_ylabel("utility gap")
@@ -154,14 +183,14 @@ def plot_mean_utility_gap_by_algorithm(gap_dict, instance_name, show: bool = Tru
 
 def plot_mean_cumulative_rewards_by_algorithm(reward_dict, instance_name, show: bool = True):
     """
-    Plot mean cumulative rewards with q25-q75 bands for each algorithm.
+    Plot mean cumulative rewards with standard error bands for each algorithm.
     """
     fig, ax = plt.subplots(figsize=(8, 4.5))
 
     for algorithm_name, reward_list in reward_dict.items():
-        rewards = np.stack(reward_list, axis=0)          # (n_seeds, T)
-        cum_rewards = np.cumsum(rewards, axis=1)         # (n_seeds, T)
-        plot_mean_and_iqr(ax, cum_rewards, label=algorithm_name)
+        rewards = np.stack(reward_list, axis=0)
+        cum_rewards = np.cumsum(rewards, axis=1)
+        plot_mean_with_se(ax, cum_rewards, label=algorithm_name)
 
     ax.set_xlabel("t")
     ax.set_ylabel("cumulative reward")
@@ -189,8 +218,8 @@ def plot_mean_weight_trajectories_by_algorithm(weight_dict, instance_name, show:
     for row, (algorithm_name, weight_list) in enumerate(weight_dict.items()):
         ax = axes[row, 0]
 
-        weights = np.stack(weight_list, axis=0)   # (n_seeds, T, K)
-        mean_weights = weights.mean(axis=0)       # (T, K)
+        weights = np.stack(weight_list, axis=0)
+        mean_weights = weights.mean(axis=0)
 
         T, K = mean_weights.shape
 
@@ -251,6 +280,7 @@ def save_figure(fig, filepath):
     filepath.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(filepath, bbox_inches="tight")
 
+
 def plot_avg_weight_gap_and_time_avg_gap_by_algorithm(
     avg_weight_gap_dict,
     time_avg_gap_dict,
@@ -264,26 +294,24 @@ def plot_avg_weight_gap_and_time_avg_gap_by_algorithm(
       2) mean over seeds of the time-averaged gap:
             (1/t) sum_{s=1}^t [U(w*) - U(w_s)]
 
-    Both are shown with q25-q75 bands across seeds.
+    Both are shown with standard error bands.
 
     Parameters
     ----------
     avg_weight_gap_dict : dict
         algorithm_name -> list of arrays, each of shape (T,)
-        One trajectory per seed.
     time_avg_gap_dict : dict
         algorithm_name -> list of arrays, each of shape (T,)
-        One trajectory per seed.
     """
     fig, ax = plt.subplots(figsize=(8, 4.5))
 
     for algorithm_name, gap_list in avg_weight_gap_dict.items():
-        gaps = np.stack(gap_list, axis=0)   # shape (n_seeds, T)
-        plot_mean_and_iqr(ax, gaps, label=f"{algorithm_name}: gap(avg weight)")
+        gaps = np.stack(gap_list, axis=0)
+        plot_mean_with_se(ax, gaps, label=f"{algorithm_name}: gap at averaged iterate")
 
     for algorithm_name, gap_list in time_avg_gap_dict.items():
-        gaps = np.stack(gap_list, axis=0)   # shape (n_seeds, T)
-        plot_mean_and_iqr(ax, gaps, label=f"{algorithm_name}: time-avg gap")
+        gaps = np.stack(gap_list, axis=0)
+        plot_mean_with_se(ax, gaps, label=f"{algorithm_name}: time-averaged gap")
 
     ax.set_xlabel("t")
     ax.set_ylabel("gap")

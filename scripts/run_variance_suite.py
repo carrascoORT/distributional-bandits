@@ -33,7 +33,7 @@ def build_algorithm_from_config(algorithm_cfg, K: int, gamma: float):
         eta0 = float(algorithm_cfg.get("eta0", 0.2))
         return VarianceMirrorAscent(K=K, eta0=eta0, gamma=gamma)
 
-    elif name == "variance_if_ascent":
+    if name == "variance_if_ascent":
         eta0 = float(algorithm_cfg.get("eta0", 0.2))
         prior_mean = float(algorithm_cfg.get("prior_mean", 0.0))
         prior_second_moment = float(algorithm_cfg.get("prior_second_moment", 1.0))
@@ -47,8 +47,23 @@ def build_algorithm_from_config(algorithm_cfg, K: int, gamma: float):
             prior_count=prior_count,
         )
 
-    else:
-        raise ValueError(f"Unknown algorithm name: {name}")
+    raise ValueError(f"Unknown algorithm name: {name}")
+
+
+def resolve_seeds(config):
+    if "seeds" in config and config["seeds"] is not None:
+        return list(config["seeds"])
+
+    if "n_seeds" in config:
+        n_seeds = int(config["n_seeds"])
+        if n_seeds <= 0:
+            raise ValueError("n_seeds must be a positive integer.")
+
+        seed_start = int(config.get("seed_start", 101))
+        seed_step = int(config.get("seed_step", 101))
+        return [seed_start + i * seed_step for i in range(n_seeds)]
+
+    raise ValueError("Config must contain either 'seeds' or 'n_seeds'.")
 
 
 def main():
@@ -65,7 +80,7 @@ def main():
 
     experiment_name = config["experiment_name"]
     T = int(config["horizon"])
-    seeds = list(config["seeds"])
+    seeds = resolve_seeds(config)
     gamma = float(config["constraint"]["gamma"])
     utility_name = config["utility"]["name"]
     algorithm_cfgs = list(config["algorithms"])
@@ -88,10 +103,13 @@ def main():
     for instance_name in instance_names:
         instance = build_variance_instance(instance_name)
         w_star, u_star, opt_result = solve_variance_optimum_gamma(
-            instance, utility, gamma=gamma
+            instance=instance,
+            utility=utility,
+            gamma=gamma,
         )
 
         summary_rows = []
+
         weight_dict = {cfg["name"]: [] for cfg in algorithm_cfgs}
         utility_dict = {cfg["name"]: [] for cfg in algorithm_cfgs}
         gap_dict = {cfg["name"]: [] for cfg in algorithm_cfgs}
@@ -103,6 +121,7 @@ def main():
 
         for algorithm_cfg in algorithm_cfgs:
             algorithm_name = algorithm_cfg["name"]
+
             algo_raw_dir = instance_raw_dir / algorithm_name
             algo_raw_dir.mkdir(parents=True, exist_ok=True)
 
@@ -158,14 +177,8 @@ def main():
                     "final_avg_weight_gap": final_avg_weight_gap,
                     "final_time_avg_gap": final_time_avg_gap,
                     "l1_error_to_w_star": l1_error,
-                    **{
-                        f"final_w_{k}": float(final_weights[k])
-                        for k in range(instance.K)
-                    },
-                    **{
-                        f"w_star_{k}": float(w_star[k])
-                        for k in range(instance.K)
-                    },
+                    **{f"final_w_{k}": float(final_weights[k]) for k in range(instance.K)},
+                    **{f"w_star_{k}": float(w_star[k]) for k in range(instance.K)},
                 }
 
                 summary_rows.append(row)
@@ -202,13 +215,10 @@ def main():
             "u_star": float(u_star),
             "optimizer_success": bool(opt_result.success),
             "optimizer_message": str(opt_result.message),
+            "uncertainty_bands": "standard_error",
             "config_path": args.config,
         }
-        with open(
-            processed_base / f"{instance_name}_metadata.json",
-            "w",
-            encoding="utf-8",
-        ) as f:
+        with open(processed_base / f"{instance_name}_metadata.json", "w", encoding="utf-8") as f:
             json.dump(instance_metadata, f, indent=2)
 
         fig1, axes1 = plot_mean_weight_trajectories_by_algorithm(
@@ -216,10 +226,7 @@ def main():
             instance_name=instance.name,
             show=False,
         )
-        save_figure(
-            fig1,
-            figures_base / f"{instance_name}_mean_weights_by_algorithm.png",
-        )
+        save_figure(fig1, figures_base / f"{instance_name}_mean_weights_by_algorithm.png")
         plt.close(fig1)
 
         fig2, ax2 = plot_mean_utility_by_algorithm(
@@ -228,10 +235,7 @@ def main():
             instance_name=instance.name,
             show=False,
         )
-        save_figure(
-            fig2,
-            figures_base / f"{instance_name}_mean_utility.png",
-        )
+        save_figure(fig2, figures_base / f"{instance_name}_mean_utility_se_bands.png")
         plt.close(fig2)
 
         fig3, ax3 = plot_mean_utility_gap_by_algorithm(
@@ -239,10 +243,7 @@ def main():
             instance_name=instance.name,
             show=False,
         )
-        save_figure(
-            fig3,
-            figures_base / f"{instance_name}_mean_utility_gap.png",
-        )
+        save_figure(fig3, figures_base / f"{instance_name}_mean_utility_gap_se_bands.png")
         plt.close(fig3)
 
         fig4, ax4 = plot_avg_weight_gap_and_time_avg_gap_by_algorithm(
@@ -251,10 +252,7 @@ def main():
             instance_name=instance.name,
             show=False,
         )
-        save_figure(
-            fig4,
-            figures_base / f"{instance_name}_avg_weight_gap_and_time_avg_gap.png",
-        )
+        save_figure(fig4, figures_base / f"{instance_name}_avg_weight_gap_and_time_avg_gap_se_bands.png")
         plt.close(fig4)
 
         print(f"\nCompleted instance: {instance_name}")
@@ -275,6 +273,7 @@ def main():
         "seeds": seeds,
         "n_seeds": len(seeds),
         "gamma": gamma,
+        "uncertainty_bands": "standard_error",
         "config_path": args.config,
     }
     with open(processed_base / "global_metadata.json", "w", encoding="utf-8") as f:
