@@ -1,5 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import scienceplots
+plt.style.use(['science','nature'])
 from pathlib import Path
 
 
@@ -204,10 +206,16 @@ def plot_mean_cumulative_rewards_by_algorithm(reward_dict, instance_name, show: 
     return fig, ax
 
 
-def plot_mean_weight_trajectories_by_algorithm(weight_dict, instance_name, show: bool = True):
+def plot_mean_weight_trajectories_by_algorithm(
+    weight_dict,
+    instance_name,
+    gamma,
+    show: bool = True,
+):
     """
     Plot mean weight trajectories for each algorithm.
     No uncertainty bands here; each subplot shows the mean weight of each arm.
+    A horizontal dashed line marks the threshold gamma.
     """
     n_algorithms = len(weight_dict)
 
@@ -226,11 +234,24 @@ def plot_mean_weight_trajectories_by_algorithm(weight_dict, instance_name, show:
         for k in range(K):
             ax.plot(mean_weights[:, k], label=f"arm {k}")
 
+        ax.axhline(
+            gamma,
+            linestyle="--",
+            linewidth=1.5,
+            color="black",
+            label=r"$\gamma$",
+        )
+
         ax.set_xlabel("t")
         ax.set_ylabel("mean weight")
         ax.set_ylim(0.0, 1.0)
         ax.set_title(f"{algorithm_name} on {instance_name}")
-        ax.legend()
+
+        handles, labels = ax.get_legend_handles_labels()
+        gamma_idx = labels.index(r"$\gamma$")
+        handles = handles[:gamma_idx] + handles[gamma_idx + 1 :] + [handles[gamma_idx]]
+        labels = labels[:gamma_idx] + labels[gamma_idx + 1 :] + [labels[gamma_idx]]
+        ax.legend(handles, labels)
 
     fig.tight_layout()
 
@@ -278,7 +299,7 @@ def save_figure(fig, filepath):
     """
     filepath = Path(filepath)
     filepath.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(filepath, bbox_inches="tight")
+    fig.savefig(filepath, bbox_inches="tight", format='pdf')
 
 
 def plot_avg_weight_gap_and_time_avg_gap_by_algorithm(

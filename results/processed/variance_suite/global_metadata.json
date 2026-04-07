@@ -114,5 +114,5 @@
   "n_seeds": 100,
   "gamma": 0.02,
   "uncertainty_bands": "standard_error",
-  "config_path": "configs/variance_suite.yaml"
+  "config_path": "configs\\variance_suite.yaml"
 }

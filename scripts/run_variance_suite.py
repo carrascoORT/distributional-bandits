@@ -223,10 +223,11 @@ def main():
 
         fig1, axes1 = plot_mean_weight_trajectories_by_algorithm(
             weight_dict=weight_dict,
-            instance_name=instance.name,
+            instance_name=instance_name,
+            gamma=gamma,
             show=False,
         )
-        save_figure(fig1, figures_base / f"{instance_name}_mean_weights_by_algorithm.png")
+        save_figure(fig1, figures_base / f"{instance_name}_mean_weights_by_algorithm.pdf")
         plt.close(fig1)
 
         fig2, ax2 = plot_mean_utility_by_algorithm(
@@ -235,7 +236,7 @@ def main():
             instance_name=instance.name,
             show=False,
         )
-        save_figure(fig2, figures_base / f"{instance_name}_mean_utility_se_bands.png")
+        save_figure(fig2, figures_base / f"{instance_name}_mean_utility_se_bands.pdf")
         plt.close(fig2)
 
         fig3, ax3 = plot_mean_utility_gap_by_algorithm(
@@ -243,7 +244,7 @@ def main():
             instance_name=instance.name,
             show=False,
         )
-        save_figure(fig3, figures_base / f"{instance_name}_mean_utility_gap_se_bands.png")
+        save_figure(fig3, figures_base / f"{instance_name}_mean_utility_gap_se_bands.pdf")
         plt.close(fig3)
 
         fig4, ax4 = plot_avg_weight_gap_and_time_avg_gap_by_algorithm(
@@ -252,7 +253,7 @@ def main():
             instance_name=instance.name,
             show=False,
         )
-        save_figure(fig4, figures_base / f"{instance_name}_avg_weight_gap_and_time_avg_gap_se_bands.png")
+        save_figure(fig4, figures_base / f"{instance_name}_avg_weight_gap_and_time_avg_gap_se_bands.pdf")
         plt.close(fig4)
 
         print(f"\nCompleted instance: {instance_name}")
