@@ -1,8 +1,25 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import scienceplots
-plt.style.use(['science','nature'])
+plt.style.use(["science", "nature"])
+# If LaTeX is not available from PATH, uncomment the next line:
+# plt.rcParams["text.usetex"] = False
+from matplotlib.lines import Line2D
+
 from pathlib import Path
+
+
+ALGORITHM_LABELS = {
+    "variance_mirror_ascent": "Exact IF",
+    "variance_if_ascent": "Estimated IF",
+}
+
+
+def pretty_algorithm_name(name: str) -> str:
+    """
+    Map internal algorithm names to publication-ready labels.
+    """
+    return ALGORITHM_LABELS.get(name, name)
 
 
 def plot_weight_trajectories(results: dict, title: str = None, show: bool = True):
@@ -12,17 +29,17 @@ def plot_weight_trajectories(results: dict, title: str = None, show: bool = True
     weights = np.asarray(results["weights"])
     T, K = weights.shape
 
-    fig, ax = plt.subplots(figsize=(8, 4.5))
+    fig, ax = plt.subplots(figsize=(4, 3))
 
     for k in range(K):
         ax.plot(weights[:, k], label=f"arm {k}")
 
-    ax.set_xlabel("t")
-    ax.set_ylabel("weight")
-    ax.set_ylim(0.0, 1.0)
+    ax.set_xlabel("Step (t)")
+    ax.set_ylabel("Weight")
 
     if title is None:
-        title = f"Weights - {results['algorithm_name']} on {results['instance_name']}"
+        algo_label = pretty_algorithm_name(results["algorithm_name"])
+        title = f"Weights - {algo_label} on {results['instance_name']}"
     ax.set_title(title)
     ax.legend()
 
@@ -44,11 +61,12 @@ def plot_cumulative_rewards(results: dict, title: str = None, show: bool = True)
     fig, ax = plt.subplots(figsize=(8, 4.5))
     ax.plot(cumulative_rewards)
 
-    ax.set_xlabel("t")
-    ax.set_ylabel("cumulative reward")
+    ax.set_xlabel("Step (t)")
+    ax.set_ylabel("Cumulative Reward")
 
     if title is None:
-        title = f"Cumulative rewards - {results['algorithm_name']}"
+        algo_label = pretty_algorithm_name(results["algorithm_name"])
+        title = f"Cumulative Rewards - {algo_label}"
     ax.set_title(title)
 
     fig.tight_layout()
@@ -71,11 +89,12 @@ def plot_utility_trajectory(results: dict, title: str = None, show: bool = True)
     fig, ax = plt.subplots(figsize=(8, 4.5))
     ax.plot(utility_values)
 
-    ax.set_xlabel("t")
-    ax.set_ylabel("utility")
+    ax.set_xlabel("Step (t)")
+    ax.set_ylabel("Utility")
 
     if title is None:
-        title = f"Utility - {results['algorithm_name']} on {results['instance_name']}"
+        algo_label = pretty_algorithm_name(results["algorithm_name"])
+        title = f"Utility - {algo_label} on {results['instance_name']}"
     ax.set_title(title)
 
     fig.tight_layout()
@@ -123,14 +142,6 @@ def _mean_and_standard_error(trajectories):
 def plot_mean_with_se(ax, trajectories, label: str, alpha: float = 0.20):
     """
     Plot the mean trajectory with standard error bands on an existing axis.
-
-    Parameters
-    ----------
-    ax : matplotlib axis
-    trajectories : array-like, shape (n_runs, T)
-    label : str
-    alpha : float, default=0.20
-        Transparency of the standard error band.
     """
     mean_x, lower, upper = _mean_and_standard_error(trajectories)
     t = np.arange(len(mean_x))
@@ -142,16 +153,17 @@ def plot_mean_utility_by_algorithm(utility_dict, u_star, instance_name, show: bo
     """
     Plot mean utility with standard error bands for each algorithm.
     """
-    fig, ax = plt.subplots(figsize=(8, 4.5))
+    fig, ax = plt.subplots(figsize=(4, 3))
 
     for algorithm_name, utility_list in utility_dict.items():
         utilities = np.stack(utility_list, axis=0)
-        plot_mean_with_se(ax, utilities, label=algorithm_name)
+        algo_label = pretty_algorithm_name(algorithm_name)
+        plot_mean_with_se(ax, utilities, label=algo_label)
 
-    ax.axhline(u_star, linestyle="--", label="optimal utility")
-    ax.set_xlabel("t")
-    ax.set_ylabel("utility")
-    ax.set_title(f"Variance utility on {instance_name}")
+    ax.axhline(u_star, linestyle="--", label="Optimal Utility")
+    ax.set_xlabel("Step (t)")
+    ax.set_ylabel("Utility")
+    ax.set_title(f"Variance Utility on {instance_name}")
     ax.legend()
     fig.tight_layout()
 
@@ -165,15 +177,16 @@ def plot_mean_utility_gap_by_algorithm(gap_dict, instance_name, show: bool = Tru
     """
     Plot mean utility gap with standard error bands for each algorithm.
     """
-    fig, ax = plt.subplots(figsize=(8, 4.5))
+    fig, ax = plt.subplots(figsize=(4, 3))
 
     for algorithm_name, gap_list in gap_dict.items():
         gaps = np.stack(gap_list, axis=0)
-        plot_mean_with_se(ax, gaps, label=algorithm_name)
+        algo_label = pretty_algorithm_name(algorithm_name)
+        plot_mean_with_se(ax, gaps, label=algo_label)
 
-    ax.set_xlabel("t")
-    ax.set_ylabel("utility gap")
-    ax.set_title(f"Utility gap on {instance_name}")
+    ax.set_xlabel("Step (t)")
+    ax.set_ylabel("Utility Gap")
+    ax.set_title(f"Utility Gap on {instance_name}")
     ax.legend()
     fig.tight_layout()
 
@@ -192,11 +205,12 @@ def plot_mean_cumulative_rewards_by_algorithm(reward_dict, instance_name, show: 
     for algorithm_name, reward_list in reward_dict.items():
         rewards = np.stack(reward_list, axis=0)
         cum_rewards = np.cumsum(rewards, axis=1)
-        plot_mean_with_se(ax, cum_rewards, label=algorithm_name)
+        algo_label = pretty_algorithm_name(algorithm_name)
+        plot_mean_with_se(ax, cum_rewards, label=algo_label)
 
-    ax.set_xlabel("t")
-    ax.set_ylabel("cumulative reward")
-    ax.set_title(f"Cumulative rewards on {instance_name}")
+    ax.set_xlabel("Step (t)")
+    ax.set_ylabel("Cumulative Reward")
+    ax.set_title(f"Cumulative Rewards on {instance_name}")
     ax.legend()
     fig.tight_layout()
 
@@ -216,11 +230,15 @@ def plot_mean_weight_trajectories_by_algorithm(
     Plot mean weight trajectories for each algorithm.
     No uncertainty bands here; each subplot shows the mean weight of each arm.
     A horizontal dashed line marks the threshold gamma.
+
+    The legend is compact:
+      - black solid line for the weight trajectories
+      - black dashed line for gamma
     """
     n_algorithms = len(weight_dict)
 
     fig, axes = plt.subplots(
-        n_algorithms, 1, figsize=(8, 4.5 * n_algorithms), squeeze=False
+        n_algorithms, 1, figsize=(4, 3 * n_algorithms), squeeze=False
     )
 
     for row, (algorithm_name, weight_list) in enumerate(weight_dict.items()):
@@ -232,26 +250,25 @@ def plot_mean_weight_trajectories_by_algorithm(
         T, K = mean_weights.shape
 
         for k in range(K):
-            ax.plot(mean_weights[:, k], label=f"arm {k}")
+            ax.plot(mean_weights[:, k])
 
         ax.axhline(
             gamma,
             linestyle="--",
             linewidth=1.5,
             color="black",
-            label=r"$\gamma$",
         )
 
-        ax.set_xlabel("t")
-        ax.set_ylabel("mean weight")
-        ax.set_ylim(0.0, 1.0)
-        ax.set_title(f"{algorithm_name} on {instance_name}")
+        algo_label = pretty_algorithm_name(algorithm_name)
+        ax.set_xlabel("Step (t)")
+        ax.set_ylabel("Mean Weight")
+        ax.set_title(f"{algo_label} on {instance_name}")
 
-        handles, labels = ax.get_legend_handles_labels()
-        gamma_idx = labels.index(r"$\gamma$")
-        handles = handles[:gamma_idx] + handles[gamma_idx + 1 :] + [handles[gamma_idx]]
-        labels = labels[:gamma_idx] + labels[gamma_idx + 1 :] + [labels[gamma_idx]]
-        ax.legend(handles, labels)
+        custom_handles = [
+            Line2D([0], [0], color="black", linestyle="-", linewidth=1.5, label="weights"),
+            Line2D([0], [0], color="black", linestyle="--", linewidth=1.5, label=r"$\gamma$"),
+        ]
+        ax.legend(handles=custom_handles)
 
     fig.tight_layout()
 
@@ -299,7 +316,7 @@ def save_figure(fig, filepath):
     """
     filepath = Path(filepath)
     filepath.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(filepath, bbox_inches="tight", format='pdf')
+    fig.savefig(filepath, bbox_inches="tight", format="pdf")
 
 
 def plot_avg_weight_gap_and_time_avg_gap_by_algorithm(
@@ -316,27 +333,22 @@ def plot_avg_weight_gap_and_time_avg_gap_by_algorithm(
             (1/t) sum_{s=1}^t [U(w*) - U(w_s)]
 
     Both are shown with standard error bands.
-
-    Parameters
-    ----------
-    avg_weight_gap_dict : dict
-        algorithm_name -> list of arrays, each of shape (T,)
-    time_avg_gap_dict : dict
-        algorithm_name -> list of arrays, each of shape (T,)
     """
-    fig, ax = plt.subplots(figsize=(8, 4.5))
+    fig, ax = plt.subplots(figsize=(4, 3))
 
     for algorithm_name, gap_list in avg_weight_gap_dict.items():
         gaps = np.stack(gap_list, axis=0)
-        plot_mean_with_se(ax, gaps, label=f"{algorithm_name}: gap at averaged iterate")
+        algo_label = pretty_algorithm_name(algorithm_name)
+        plot_mean_with_se(ax, gaps, label=f"{algo_label}: avg-iterate")
 
     for algorithm_name, gap_list in time_avg_gap_dict.items():
         gaps = np.stack(gap_list, axis=0)
-        plot_mean_with_se(ax, gaps, label=f"{algorithm_name}: time-averaged gap")
+        algo_label = pretty_algorithm_name(algorithm_name)
+        plot_mean_with_se(ax, gaps, label=f"{algo_label}: time-avg")
 
-    ax.set_xlabel("t")
-    ax.set_ylabel("gap")
-    ax.set_title(f"Averaged-weight gap and time-averaged gap on {instance_name}")
+    ax.set_xlabel("Step (t)")
+    ax.set_ylabel("Gap")
+    ax.set_title(f"Avg-Weight Gap and Time-Averaged Gap on {instance_name}")
     ax.legend()
     fig.tight_layout()
 

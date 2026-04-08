@@ -6,7 +6,7 @@
     "variance_mirror_ascent",
     "variance_if_ascent"
   ],
-  "T": 1500,
+  "T": 2000,
   "seeds": [
     100,
     200,

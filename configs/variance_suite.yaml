@@ -1,6 +1,6 @@
 experiment_name: variance_suite
 
-horizon: 1500
+horizon: 2000
 n_seeds: 100
 seed_start: 100
 seed_step: 100
@@ -13,12 +13,12 @@ constraint:
 
 algorithms:
   - name: variance_mirror_ascent
-    eta0: 3
+    eta0: 1
   - name: variance_if_ascent
-    eta0: 3
+    eta0: 1
     prior_mean: 0.0
     prior_second_moment: 1.0
-    prior_count: 1.0
+    prior_count: 0.5
 
 instances:
   - beta_mixture_4
