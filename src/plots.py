@@ -356,3 +356,55 @@ def plot_avg_weight_gap_and_time_avg_gap_by_algorithm(
         plt.show()
 
     return fig, ax
+
+def plot_avg_weight_gap_by_eta(
+    avg_weight_gap_by_eta,
+    eta_values,
+    instance_name,
+    show: bool = True,
+):
+    """
+    Faceted comparison of avg-weight gap trajectories across eta values.
+
+    Parameters
+    ----------
+    avg_weight_gap_by_eta : dict
+        avg_weight_gap_by_eta[eta][algorithm_name] = list of arrays of shape (T,)
+    eta_values : list
+        Ordered list of eta values to display.
+    instance_name : str
+    show : bool, default=True
+    """
+    n_eta = len(eta_values)
+
+    fig, axes = plt.subplots(
+        1,
+        n_eta,
+        figsize=(3 * n_eta, 3),
+        squeeze=False,
+        sharex=True,
+        sharey=True,
+    )
+
+    for col, eta in enumerate(eta_values):
+        ax = axes[0, col]
+        eta_dict = avg_weight_gap_by_eta[eta]
+
+        for algorithm_name, gap_list in eta_dict.items():
+            gaps = np.stack(gap_list, axis=0)
+            algo_label = pretty_algorithm_name(algorithm_name)
+            plot_mean_with_se(ax, gaps, label=algo_label)
+
+        ax.set_title(rf"$\eta_0 = {eta}$")
+        ax.set_xlabel("Step (t)")
+        if col == 0:
+            ax.set_ylabel(r"Avg-Weight Gap: $U(w^\star)-U(\bar w_t)$")
+            ax.legend()
+
+    fig.suptitle(f"Avg-Weight Gap on {instance_name}", y=1.03)
+    fig.tight_layout()
+
+    if show:
+        plt.show()
+
+    return fig, axes

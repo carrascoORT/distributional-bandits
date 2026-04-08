@@ -1,0 +1,34 @@
+{
+  "experiment_name": "variance_suite_eta_grid",
+  "utility_name": "variance",
+  "instance_names": [
+    "beta_mixture_4"
+  ],
+  "algorithm_names": [
+    "variance_mirror_ascent",
+    "variance_if_ascent"
+  ],
+  "eta_values": [
+    0.5,
+    1.0,
+    2.0,
+    3.0
+  ],
+  "T": 500,
+  "seeds": [
+    100,
+    200,
+    300,
+    400,
+    500,
+    600,
+    700,
+    800,
+    900,
+    1000
+  ],
+  "n_seeds": 10,
+  "gamma": 0.02,
+  "uncertainty_bands": "standard_error",
+  "config_path": "configs\\variance_suite_eta_grid.yaml"
+}

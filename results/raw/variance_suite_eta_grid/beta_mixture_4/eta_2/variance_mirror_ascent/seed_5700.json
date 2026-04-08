@@ -1,0 +1,10 @@
+{
+  "instance_name": "beta_mixture_4",
+  "algorithm_name": "variance_mirror_ascent",
+  "T": 2000,
+  "seed": 5700,
+  "K": 4,
+  "has_utility_values": true,
+  "has_average_weights": true,
+  "has_avg_weight_utility_values": true
+}
