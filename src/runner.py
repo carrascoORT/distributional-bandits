@@ -4,21 +4,27 @@ from pathlib import Path
 import numpy as np
 
 
-def run_single_experiment(instance, algorithm, T: int, seed: int = 123, utility=None):
-    """
-    Run one trajectory of a bandit algorithm on one bandit instance.
-
-    Returns actions, rewards, weights, and optionally utility-based summaries.
-    """
+def run_single_experiment(
+    instance,
+    algorithm,
+    T: int,
+    seed: int = 123,
+    utility=None,
+    mc_bias_n: int | None = None,
+):
     if T <= 0:
         raise ValueError("T must be a positive integer.")
 
     rng = np.random.default_rng(seed)
+    mc_rng = np.random.default_rng(seed + 10_000_003)
 
     try:
-        algorithm.reset(rng, instance=instance)
+        algorithm.reset(rng, instance=instance, utility=utility)
     except TypeError:
-        algorithm.reset(rng)
+        try:
+            algorithm.reset(rng, instance=instance)
+        except TypeError:
+            algorithm.reset(rng)
 
     actions = np.zeros(T, dtype=int)
     rewards = np.zeros(T, dtype=float)
@@ -35,23 +41,35 @@ def run_single_experiment(instance, algorithm, T: int, seed: int = 123, utility=
 
     running_weight_sum = np.zeros(instance.K, dtype=float)
 
+    mc_bias_vector_values = []
+    mc_bias_inf_values = np.full(T, np.nan, dtype=float)
+    mc_bias_l2_values = np.full(T, np.nan, dtype=float)
+
     for t in range(T):
+        if (
+            mc_bias_n is not None
+            and mc_bias_n > 0
+            and getattr(algorithm, "name", "") == "wasserstein_if_ascent_empirical"
+            and hasattr(algorithm, "estimate_conditional_bias_mc")
+        ):
+            mc_diag = algorithm.estimate_conditional_bias_mc(mc_rng, n_mc=mc_bias_n)
+            mc_bias_vector_values.append(np.asarray(mc_diag["mc_bias_vector"], dtype=float))
+            mc_bias_inf_values[t] = float(mc_diag["mc_bias_inf"])
+            mc_bias_l2_values[t] = float(mc_diag["mc_bias_l2"])
+
         action = algorithm.select_action()
         reward = instance.sample(action, rng)
         algorithm.update(action, reward)
 
         current_w = algorithm.current_weights()
-
         actions[t] = action
         rewards[t] = reward
         weights[t] = current_w
 
         if utility is not None:
             utility_values[t] = utility.value(instance, current_w)
-
             running_weight_sum += current_w
-            avg_w_t = running_weight_sum / (t + 1)
-
+            avg_w_t = running_weight_sum / float(t + 1)
             average_weights[t] = avg_w_t
             avg_weight_utility_values[t] = utility.value(instance, avg_w_t)
 
@@ -65,10 +83,15 @@ def run_single_experiment(instance, algorithm, T: int, seed: int = 123, utility=
         "weights": weights,
     }
 
-    if utility_values is not None:
+    if utility is not None:
         results["utility_values"] = utility_values
         results["average_weights"] = average_weights
         results["avg_weight_utility_values"] = avg_weight_utility_values
+
+    if len(mc_bias_vector_values) > 0:
+        results["mc_bias_vector_values"] = np.stack(mc_bias_vector_values, axis=0)
+        results["mc_bias_inf_values"] = mc_bias_inf_values
+        results["mc_bias_l2_values"] = mc_bias_l2_values
 
     return results
 
@@ -76,41 +99,22 @@ def run_single_experiment(instance, algorithm, T: int, seed: int = 123, utility=
 def save_results_npz(results: dict, filepath):
     filepath = Path(filepath)
     filepath.parent.mkdir(parents=True, exist_ok=True)
-
-    payload = {
-        "instance_name": results["instance_name"],
-        "algorithm_name": results["algorithm_name"],
-        "T": results["T"],
-        "seed": results["seed"],
-        "actions": results["actions"],
-        "rewards": results["rewards"],
-        "weights": results["weights"],
-    }
-
-    if "utility_values" in results:
-        payload["utility_values"] = results["utility_values"]
-    if "average_weights" in results:
-        payload["average_weights"] = results["average_weights"]
-    if "avg_weight_utility_values" in results:
-        payload["avg_weight_utility_values"] = results["avg_weight_utility_values"]
-
-    np.savez(filepath, **payload)
+    np.savez_compressed(filepath, **results)
 
 
 def save_metadata_json(results: dict, filepath):
     filepath = Path(filepath)
     filepath.parent.mkdir(parents=True, exist_ok=True)
-
-    metadata = {
-        "instance_name": results["instance_name"],
-        "algorithm_name": results["algorithm_name"],
-        "T": int(results["T"]),
-        "seed": int(results["seed"]),
-        "K": int(results["weights"].shape[1]),
-        "has_utility_values": "utility_values" in results,
-        "has_average_weights": "average_weights" in results,
-        "has_avg_weight_utility_values": "avg_weight_utility_values" in results,
-    }
-
+    serializable = {}
+    for key, value in results.items():
+        if isinstance(value, np.ndarray):
+            serializable[key] = {
+                "shape": list(value.shape),
+                "dtype": str(value.dtype),
+            }
+        elif isinstance(value, (np.integer, np.floating)):
+            serializable[key] = value.item()
+        else:
+            serializable[key] = value
     with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(metadata, f, indent=2)
+        json.dump(serializable, f, indent=2)

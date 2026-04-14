@@ -7,158 +7,157 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# Add project root to Python path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT))
 
-from src.config import load_yaml_config
-from src.algorithms import VarianceMirrorAscent, VarianceIFAscent
-from src.utilities import VarianceUtility
-from src.offline_opt import solve_variance_optimum_gamma
-from src.instance_factory import build_variance_instance
-from src.runner import run_single_experiment, save_results_npz, save_metadata_json
-from src.plots import (
-    save_figure,
-    plot_avg_weight_gap_by_eta,
+from src.config import load_yaml_config, should_save_raw_output
+from src.algorithms import (
+    VarianceMirrorAscent,
+    VarianceIFAscent,
+    WassersteinMirrorAscent,
+    WassersteinIFAscent,
 )
+from src.utilities import VarianceUtility, WassersteinUtility
+from src.offline_opt import solve_utility_optimum_gamma
+from src.instance_factory import build_bandit_instance
+from src.runner import run_single_experiment, save_results_npz, save_metadata_json
+from src.plots import save_figure, plot_avg_weight_gap_by_eta
 
 
-def build_algorithm_from_config(
-    algorithm_cfg,
-    K: int,
-    gamma: float,
-    eta0_override=None,
-):
+def build_utility_from_config(config):
+    utility_name = config["utility"]["name"]
+    if utility_name == "variance":
+        return VarianceUtility()
+    if utility_name == "wasserstein":
+        return WassersteinUtility.from_config(config["utility"])
+    raise ValueError(f"Unsupported utility.name: {utility_name}")
+
+
+def build_algorithm_from_config(algorithm_cfg, K: int, gamma: float, eta0_override=None):
     name = algorithm_cfg["name"]
+    eta0 = float(eta0_override if eta0_override is not None else algorithm_cfg.get("eta0", 0.2))
 
     if name == "variance_mirror_ascent":
-        eta0 = float(
-            eta0_override if eta0_override is not None else algorithm_cfg.get("eta0", 0.2)
-        )
         return VarianceMirrorAscent(K=K, eta0=eta0, gamma=gamma)
-
     if name == "variance_if_ascent":
-        eta0 = float(
-            eta0_override if eta0_override is not None else algorithm_cfg.get("eta0", 0.2)
-        )
-        prior_mean = float(algorithm_cfg.get("prior_mean", 0.0))
-        prior_second_moment = float(algorithm_cfg.get("prior_second_moment", 1.0))
-        prior_count = float(algorithm_cfg.get("prior_count", 1.0))
         return VarianceIFAscent(
             K=K,
             eta0=eta0,
             gamma=gamma,
-            prior_mean=prior_mean,
-            prior_second_moment=prior_second_moment,
-            prior_count=prior_count,
+            prior_mean=float(algorithm_cfg.get("prior_mean", 0.0)),
+            prior_second_moment=float(algorithm_cfg.get("prior_second_moment", 1.0)),
+            prior_count=float(algorithm_cfg.get("prior_count", 1.0)),
         )
-
+    if name == "wasserstein_mirror_ascent":
+        return WassersteinMirrorAscent(K=K, eta0=eta0, gamma=gamma)
+    if name == "wasserstein_if_ascent":
+        return WassersteinIFAscent(
+            K=K,
+            eta0=eta0,
+            gamma=gamma,
+            prior_count=float(algorithm_cfg.get("prior_count", 1.0)),
+            mixture_source=str(algorithm_cfg.get("mixture_source", "empirical")),
+        )
     raise ValueError(f"Unknown algorithm name: {name}")
 
 
 def resolve_seeds(config):
     if "seeds" in config and config["seeds"] is not None:
         return list(config["seeds"])
-
-    if "n_seeds" in config:
-        n_seeds = int(config["n_seeds"])
-        if n_seeds <= 0:
-            raise ValueError("n_seeds must be a positive integer.")
-
-        seed_start = int(config.get("seed_start", 101))
-        seed_step = int(config.get("seed_step", 101))
-        return [seed_start + i * seed_step for i in range(n_seeds)]
-
-    raise ValueError("Config must contain either 'seeds' or 'n_seeds'.")
+    n_seeds = int(config["n_seeds"])
+    seed_start = int(config.get("seed_start", 101))
+    seed_step = int(config.get("seed_step", 101))
+    return [seed_start + i * seed_step for i in range(n_seeds)]
 
 
 def resolve_eta_values(config, algorithm_cfgs):
     eta_values = config.get("eta_grid", None)
-
     if eta_values is not None:
         eta_values = [float(x) for x in eta_values]
         if len(eta_values) == 0:
             raise ValueError("eta_grid must be non-empty if provided.")
         return eta_values
+    eta_candidates = [float(cfg["eta0"]) for cfg in algorithm_cfgs if "eta0" in cfg]
+    return sorted(set(eta_candidates)) if eta_candidates else [0.2]
 
-    eta_candidates = [
-        float(cfg["eta0"]) for cfg in algorithm_cfgs if "eta0" in cfg
-    ]
-    if len(eta_candidates) == 0:
-        return [0.2]
 
-    unique_eta = sorted(set(eta_candidates))
-    return unique_eta
+def algorithm_key_from_config(algorithm_cfg):
+    name = algorithm_cfg["name"]
+    if name == "wasserstein_if_ascent":
+        mixture_source = str(algorithm_cfg.get("mixture_source", "empirical")).lower()
+        if mixture_source == "exact":
+            return "wasserstein_if_ascent_exact"
+        if mixture_source == "empirical":
+            return "wasserstein_if_ascent_empirical"
+        raise ValueError(f"Unsupported mixture_source: {mixture_source}")
+    return name
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--config",
-        type=str,
-        default="configs/variance_suite.yaml",
-        help="Path to YAML config file.",
-    )
+    parser.add_argument("--config", type=str, default="configs/variance_suite_eta_grid.yaml")
     args = parser.parse_args()
-
     config = load_yaml_config(args.config)
 
     experiment_name = config["experiment_name"]
     T = int(config["horizon"])
     seeds = resolve_seeds(config)
     gamma = float(config["constraint"]["gamma"])
-    utility_name = config["utility"]["name"]
     algorithm_cfgs = list(config["algorithms"])
-    instance_names = list(config["instances"])
+    instance_specs = list(config["instances"])
     eta_values = resolve_eta_values(config, algorithm_cfgs)
-
-    if utility_name != "variance":
-        raise ValueError("This script only supports utility.name = 'variance'.")
+    save_raw = should_save_raw_output(config)
+    utility = build_utility_from_config(config)
+    utility_name = config["utility"]["name"]
 
     raw_base = ROOT / config["output"]["raw_dir"] / experiment_name
     processed_base = ROOT / config["output"]["processed_dir"] / experiment_name
     figures_base = ROOT / config["output"]["figures_dir"] / experiment_name
 
-    raw_base.mkdir(parents=True, exist_ok=True)
+    if save_raw:
+        raw_base.mkdir(parents=True, exist_ok=True)
     processed_base.mkdir(parents=True, exist_ok=True)
     figures_base.mkdir(parents=True, exist_ok=True)
 
-    utility = VarianceUtility()
     global_summary_rows = []
 
-    for instance_name in instance_names:
-        instance = build_variance_instance(instance_name)
-        w_star, u_star, opt_result = solve_variance_optimum_gamma(
+    for instance_spec in instance_specs:
+        instance = build_bandit_instance(instance_spec)
+        instance_name = instance.name
+        w_star, u_star, opt_result = solve_utility_optimum_gamma(
             instance=instance,
             utility=utility,
             gamma=gamma,
         )
 
         summary_rows = []
-
+        algorithm_keys = [algorithm_key_from_config(cfg) for cfg in algorithm_cfgs]
         avg_weight_gap_by_eta = {
-            eta: {cfg["name"]: [] for cfg in algorithm_cfgs}
+            eta: {k: [] for k in algorithm_keys}
             for eta in eta_values
         }
 
-        instance_raw_dir = raw_base / instance_name
-        instance_raw_dir.mkdir(parents=True, exist_ok=True)
+        instance_raw_dir = None
+        if save_raw:
+            instance_raw_dir = raw_base / instance_name
+            instance_raw_dir.mkdir(parents=True, exist_ok=True)
 
         for eta in eta_values:
             for algorithm_cfg in algorithm_cfgs:
-                algorithm_name = algorithm_cfg["name"]
+                algorithm_key = algorithm_key_from_config(algorithm_cfg)
 
-                algo_raw_dir = instance_raw_dir / f"eta_{eta:g}" / algorithm_name
-                algo_raw_dir.mkdir(parents=True, exist_ok=True)
+                algo_raw_dir = None
+                if save_raw:
+                    algo_raw_dir = instance_raw_dir / f"eta_{eta:g}" / algorithm_key
+                    algo_raw_dir.mkdir(parents=True, exist_ok=True)
 
                 for seed in seeds:
                     algorithm = build_algorithm_from_config(
-                        algorithm_cfg=algorithm_cfg,
+                        algorithm_cfg,
                         K=instance.K,
                         gamma=gamma,
                         eta0_override=eta,
                     )
-
                     results = run_single_experiment(
                         instance=instance,
                         algorithm=algorithm,
@@ -167,87 +166,87 @@ def main():
                         utility=utility,
                     )
 
-                    save_results_npz(results, algo_raw_dir / f"seed_{seed}.npz")
-                    save_metadata_json(results, algo_raw_dir / f"seed_{seed}.json")
+                    algorithm_name = results["algorithm_name"]
 
                     final_weights = results["weights"][-1]
+                    final_avg_weights = results["average_weights"][-1]
                     utility_values = results["utility_values"]
-                    utility_gap_traj = u_star - utility_values
-
                     avg_weight_utility_values = results["avg_weight_utility_values"]
+
+                    utility_gap_traj = u_star - utility_values
                     avg_weight_gap_traj = u_star - avg_weight_utility_values
+                    cumulative_regret_traj = np.cumsum(utility_gap_traj)
+                    t_grid = np.arange(1, len(cumulative_regret_traj) + 1)
+                    time_avg_gap_traj = cumulative_regret_traj / t_grid
 
-                    cumulative_gap = np.cumsum(utility_gap_traj)
-                    t_grid = np.arange(1, len(cumulative_gap) + 1)
-                    time_avg_gap_traj = cumulative_gap / t_grid
+                    results["utility_gap_values"] = utility_gap_traj
+                    results["avg_weight_gap_values"] = avg_weight_gap_traj
+                    results["cumulative_regret_values"] = cumulative_regret_traj
+                    results["time_avg_gap_values"] = time_avg_gap_traj
+                    results["final_average_weights"] = final_avg_weights.copy()
 
-                    final_utility = float(utility_values[-1])
-                    mean_utility = float(np.mean(utility_values))
-                    final_gap = float(utility_gap_traj[-1])
-                    mean_gap = float(np.mean(utility_gap_traj))
-                    final_avg_weight_gap = float(avg_weight_gap_traj[-1])
-                    final_time_avg_gap = float(time_avg_gap_traj[-1])
-                    l1_error = float(np.sum(np.abs(final_weights - w_star)))
+                    if save_raw:
+                        save_results_npz(results, algo_raw_dir / f"seed_{seed}.npz")
+                        save_metadata_json(results, algo_raw_dir / f"seed_{seed}.json")
 
                     row = {
                         "experiment_name": experiment_name,
                         "instance_name": instance.name,
-                        "algorithm_name": results["algorithm_name"],
+                        "algorithm_name": algorithm_name,
                         "eta0": float(eta),
                         "seed": seed,
                         "T": results["T"],
                         "gamma": gamma,
                         "u_star": float(u_star),
-                        "final_utility": final_utility,
-                        "mean_utility": mean_utility,
-                        "final_gap": final_gap,
-                        "mean_gap": mean_gap,
-                        "final_avg_weight_gap": final_avg_weight_gap,
-                        "final_time_avg_gap": final_time_avg_gap,
-                        "l1_error_to_w_star": l1_error,
+                        "final_utility": float(utility_values[-1]),
+                        "mean_utility": float(np.mean(utility_values)),
+                        "final_avg_utility": float(avg_weight_utility_values[-1]),
+                        "final_gap": float(utility_gap_traj[-1]),
+                        "mean_gap": float(np.mean(utility_gap_traj)),
+                        "final_avg_weight_gap": float(avg_weight_gap_traj[-1]),
+                        "final_time_avg_gap": float(time_avg_gap_traj[-1]),
+                        "final_cumulative_regret": float(cumulative_regret_traj[-1]),
+                        "l1_error_to_w_star": float(np.sum(np.abs(final_avg_weights - w_star))),
+                        "final_bias_inf": float(results["bias_inf_values"][-1]) if "bias_inf_values" in results else np.nan,
+                        "final_bias_l2": float(results["bias_l2_values"][-1]) if "bias_l2_values" in results else np.nan,
                         **{f"final_w_{k}": float(final_weights[k]) for k in range(instance.K)},
+                        **{f"final_avg_w_{k}": float(final_avg_weights[k]) for k in range(instance.K)},
                         **{f"w_star_{k}": float(w_star[k]) for k in range(instance.K)},
                     }
 
                     summary_rows.append(row)
                     global_summary_rows.append(row)
-
                     avg_weight_gap_by_eta[eta][algorithm_name].append(avg_weight_gap_traj)
 
                     print(
-                        f"Finished instance={instance_name}, eta0={eta:g}, "
-                        f"algorithm={algorithm_name}, seed={seed} | "
-                        f"final_gap={final_gap:.6f} | "
-                        f"final_avg_weight_gap={final_avg_weight_gap:.6f} | "
-                        f"final_time_avg_gap={final_time_avg_gap:.6f} | "
-                        f"l1_error={l1_error:.6f}"
+                        f"Finished instance={instance_name}, eta0={eta:g}, algorithm={algorithm_name}, seed={seed} "
+                        f"| final_gap={row['final_gap']:.6f} | final_regret={row['final_cumulative_regret']:.6f}"
                     )
 
-        instance_summary_df = pd.DataFrame(summary_rows)
-        instance_summary_path = processed_base / f"{instance_name}_summary.csv"
-        instance_summary_df.to_csv(instance_summary_path, index=False)
+        pd.DataFrame(summary_rows).to_csv(processed_base / f"{instance_name}_summary.csv", index=False)
 
-        instance_metadata = {
-            "experiment_name": experiment_name,
-            "instance_name": instance.name,
-            "utility_name": utility_name,
-            "algorithm_names": [cfg["name"] for cfg in algorithm_cfgs],
-            "eta_values": eta_values,
-            "T": T,
-            "seeds": seeds,
-            "n_seeds": len(seeds),
-            "gamma": gamma,
-            "w_star": w_star.tolist(),
-            "u_star": float(u_star),
-            "optimizer_success": bool(opt_result.success),
-            "optimizer_message": str(opt_result.message),
-            "uncertainty_bands": "standard_error",
-            "config_path": args.config,
-        }
         with open(processed_base / f"{instance_name}_metadata.json", "w", encoding="utf-8") as f:
-            json.dump(instance_metadata, f, indent=2)
+            json.dump(
+                {
+                    "experiment_name": experiment_name,
+                    "instance_name": instance.name,
+                    "utility_name": utility_name,
+                    "algorithm_names": algorithm_keys,
+                    "eta_values": eta_values,
+                    "T": T,
+                    "seeds": seeds,
+                    "gamma": gamma,
+                    "w_star": w_star.tolist(),
+                    "u_star": float(u_star),
+                    "optimizer_success": bool(opt_result.success),
+                    "optimizer_message": str(opt_result.message),
+                    "save_raw": save_raw,
+                },
+                f,
+                indent=2,
+            )
 
-        fig, axes = plot_avg_weight_gap_by_eta(
+        fig, _ = plot_avg_weight_gap_by_eta(
             avg_weight_gap_by_eta=avg_weight_gap_by_eta,
             eta_values=eta_values,
             instance_name=instance.name,
@@ -256,36 +255,7 @@ def main():
         save_figure(fig, figures_base / f"{instance_name}_avg_weight_gap_by_eta.pdf")
         plt.close(fig)
 
-        print(f"\nCompleted instance: {instance_name}")
-        print(f"  Optimal weights w*: {np.round(w_star, 6)}")
-        print(f"  Optimal utility U(w*): {u_star:.6f}")
-        print(f"  Summary saved to: {instance_summary_path}")
-
-    global_summary_df = pd.DataFrame(global_summary_rows)
-    global_summary_path = processed_base / "global_summary.csv"
-    global_summary_df.to_csv(global_summary_path, index=False)
-
-    global_metadata = {
-        "experiment_name": experiment_name,
-        "utility_name": utility_name,
-        "instance_names": instance_names,
-        "algorithm_names": [cfg["name"] for cfg in algorithm_cfgs],
-        "eta_values": eta_values,
-        "T": T,
-        "seeds": seeds,
-        "n_seeds": len(seeds),
-        "gamma": gamma,
-        "uncertainty_bands": "standard_error",
-        "config_path": args.config,
-    }
-    with open(processed_base / "global_metadata.json", "w", encoding="utf-8") as f:
-        json.dump(global_metadata, f, indent=2)
-
-    print("\nVariance suite completed.")
-    print(f"Raw results base: {raw_base}")
-    print(f"Processed results base: {processed_base}")
-    print(f"Figures base: {figures_base}")
-    print(f"Global summary: {global_summary_path}")
+    pd.DataFrame(global_summary_rows).to_csv(processed_base / "all_instances_summary.csv", index=False)
 
 
 if __name__ == "__main__":

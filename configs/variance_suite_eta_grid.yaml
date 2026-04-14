@@ -1,7 +1,7 @@
 experiment_name: variance_suite_eta_grid
 
-horizon: 500
-n_seeds: 10
+horizon: 2000
+n_seeds: 100
 seed_start: 100
 seed_step: 100
 
@@ -11,7 +11,7 @@ utility:
 constraint:
   gamma: 0.02
 
-eta_grid: [0.5, 1, 2, 3]
+eta_grid: [0.5, 0.75, 1, 1.25, 1.5]
 
 algorithms:
   - name: variance_mirror_ascent
@@ -22,8 +22,14 @@ algorithms:
 
 instances:
   - beta_mixture_4
+  - name: gaussian_variance_spread_4
+    family: gaussian
+    params:
+      mu: [0.0, 0.0, 0.0, 0.0]
+      sigma: [0.2, 0.5, 0.8, 1.2]
 
 output:
+  save_raw: false
   raw_dir: results/raw
   processed_dir: results/processed
   figures_dir: results/figures

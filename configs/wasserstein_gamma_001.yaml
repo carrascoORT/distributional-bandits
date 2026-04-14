@@ -1,0 +1,61 @@
+experiment_name: wasserstein_main_gamma_0001
+
+horizon: 500
+n_seeds: 10
+seed_start: 100
+seed_step: 100
+
+utility:
+  name: wasserstein
+  order: 2
+  squared: true
+  target:
+    family: uniform
+    a: -1.0
+    b: 1.0
+  n_grid: 401
+  quantile_eps: 1.0e-4
+  target_quantile:
+    mode: formula
+    grid_size: 4001
+
+constraint:
+  gamma: 0.001
+
+algorithms:
+  - name: wasserstein_mirror_ascent
+    eta0: 1.0
+
+  - name: wasserstein_if_ascent
+    eta0: 1.0
+    mixture_source: exact
+    prior_count: 0.5
+
+  - name: wasserstein_if_ascent
+    eta0: 1.0
+    mixture_source: empirical
+    prior_count: 0.5
+
+instances:
+  - beta_mixture_4
+
+output:
+  save_raw: false
+  raw_dir: results/raw
+  processed_dir: results/processed
+  figures_dir: results/figures
+
+diagnostics:
+  save_summary_table: true
+  save_weight_error: true
+  save_utility_gap: true
+  save_cumulative_regret: true
+  save_bias_norm: true
+  density_plot:
+    enabled: true
+    seeds: [100]
+    instances: [beta_mixture_4]
+    algorithms:
+      - wasserstein_if_ascent_empirical
+    bw_method: null
+    n_grid: 500
