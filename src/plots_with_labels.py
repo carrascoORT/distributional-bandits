@@ -23,23 +23,6 @@ def pretty_algorithm_name(name: str) -> str:
     return ALGORITHM_LABELS.get(name, name)
 
 
-def algorithm_linestyle(name: str) -> str:
-    """
-    Preferred line styles by algorithm role.
-
-    Estimated IF gets solid.
-    Exact IF / mirror baselines get dashed or dash-dot.
-    """
-    style_map = {
-        "variance_if_ascent": "-",
-        "wasserstein_if_ascent_empirical": "-",
-        "variance_mirror_ascent": "--",
-        "wasserstein_if_ascent_exact": "--",
-        "wasserstein_mirror_ascent": "-.",
-    }
-    return style_map.get(name, "-")
-
-
 def _mean_and_standard_error(trajectories):
     x = np.asarray(trajectories)
     if x.ndim != 2:
@@ -59,11 +42,11 @@ def _mean_and_standard_error(trajectories):
     return mean_x, lower, upper
 
 
-def plot_mean_with_se(ax, trajectories, label: str, alpha: float = 0.20, linestyle: str = "-"):
+def plot_mean_with_se(ax, trajectories, label: str, alpha: float = 0.20):
     mean_x, lower, upper = _mean_and_standard_error(trajectories)
     t = np.arange(len(mean_x))
-    line, = ax.plot(t, mean_x, label=label, linestyle=linestyle)
-    ax.fill_between(t, lower, upper, alpha=alpha, color=line.get_color())
+    ax.plot(t, mean_x, label=label)
+    ax.fill_between(t, lower, upper, alpha=alpha)
 
 
 def plot_mean_weight_trajectories_by_algorithm(
@@ -89,9 +72,8 @@ def plot_mean_weight_trajectories_by_algorithm(
         mean_weights = weights.mean(axis=0)
         _, K = mean_weights.shape
 
-        arm_styles = ["-", "--", "-.", ":"]
         for k in range(K):
-            ax.plot(mean_weights[:, k], linestyle=arm_styles[k % len(arm_styles)])
+            ax.plot(mean_weights[:, k])
 
         ax.axhline(
             gamma,
@@ -99,6 +81,11 @@ def plot_mean_weight_trajectories_by_algorithm(
             linewidth=1.5,
             color="black",
         )
+
+        algo_label = pretty_algorithm_name(algorithm_name)
+        ax.set_xlabel("Step (t)")
+        ax.set_ylabel("Mean Weight")
+        ax.set_title(f"{algo_label} on {instance_name}")
 
         custom_handles = [
             Line2D([0], [0], color="black", linestyle="-", linewidth=1.5, label="weights"),
@@ -122,14 +109,12 @@ def plot_mean_utility_by_algorithm(utility_dict, u_star, instance_name, show: bo
             continue
         utilities = np.stack(utility_list, axis=0)
         algo_label = pretty_algorithm_name(algorithm_name)
-        plot_mean_with_se(
-            ax,
-            utilities,
-            label=algo_label,
-            linestyle=algorithm_linestyle(algorithm_name),
-        )
+        plot_mean_with_se(ax, utilities, label=algo_label)
 
-    ax.axhline(u_star, linestyle=":", label="Optimal Utility")
+    ax.axhline(u_star, linestyle="--", label="Optimal Utility")
+    ax.set_xlabel("Step (t)")
+    ax.set_ylabel("Utility")
+    ax.set_title(f"Utility on {instance_name}")
     ax.legend()
     fig.tight_layout()
 
@@ -147,13 +132,11 @@ def plot_mean_utility_gap_by_algorithm(gap_dict, instance_name, show: bool = Tru
             continue
         gaps = np.stack(gap_list, axis=0)
         algo_label = pretty_algorithm_name(algorithm_name)
-        plot_mean_with_se(
-            ax,
-            gaps,
-            label=algo_label,
-            linestyle=algorithm_linestyle(algorithm_name),
-        )
+        plot_mean_with_se(ax, gaps, label=algo_label)
 
+    ax.set_xlabel("Step (t)")
+    ax.set_ylabel("Utility Gap")
+    ax.set_title(f"Utility Gap on {instance_name}")
     ax.legend()
     fig.tight_layout()
 
@@ -171,13 +154,11 @@ def plot_mean_cumulative_regret_by_algorithm(regret_dict, instance_name, show: b
             continue
         regrets = np.stack(regret_list, axis=0)
         algo_label = pretty_algorithm_name(algorithm_name)
-        plot_mean_with_se(
-            ax,
-            regrets,
-            label=algo_label,
-            linestyle=algorithm_linestyle(algorithm_name),
-        )
+        plot_mean_with_se(ax, regrets, label=algo_label)
 
+    ax.set_xlabel("Step (t)")
+    ax.set_ylabel("Cumulative Regret")
+    ax.set_title(f"Cumulative Regret on {instance_name}")
     ax.legend()
     fig.tight_layout()
 
@@ -200,13 +181,11 @@ def plot_mean_mc_bias_norm(
             continue
         biases = np.stack(bias_list, axis=0)
         algo_label = pretty_algorithm_name(algorithm_name)
-        plot_mean_with_se(
-            ax,
-            biases,
-            label=algo_label,
-            linestyle=algorithm_linestyle(algorithm_name),
-        )
+        plot_mean_with_se(ax, biases, label=algo_label)
 
+    ax.set_xlabel("Step (t)")
+    ax.set_ylabel(ylabel)
+    ax.set_title(f"Monte Carlo Bias Norm on {instance_name}")
     ax.legend()
     fig.tight_layout()
 
@@ -229,25 +208,18 @@ def plot_avg_weight_gap_and_time_avg_gap_by_algorithm(
             continue
         gaps = np.stack(gap_list, axis=0)
         algo_label = pretty_algorithm_name(algorithm_name)
-        plot_mean_with_se(
-            ax,
-            gaps,
-            label=f"{algo_label}: avg-iterate",
-            linestyle=algorithm_linestyle(algorithm_name),
-        )
+        plot_mean_with_se(ax, gaps, label=f"{algo_label}: avg-iterate")
 
     for algorithm_name, gap_list in time_avg_gap_dict.items():
         if len(gap_list) == 0:
             continue
         gaps = np.stack(gap_list, axis=0)
         algo_label = pretty_algorithm_name(algorithm_name)
-        plot_mean_with_se(
-            ax,
-            gaps,
-            label=f"{algo_label}: time-avg",
-            linestyle=algorithm_linestyle(algorithm_name),
-        )
+        plot_mean_with_se(ax, gaps, label=f"{algo_label}: time-avg")
 
+    ax.set_xlabel("Step (t)")
+    ax.set_ylabel("Gap")
+    ax.set_title(f"Avg-Weight Gap and Time-Averaged Gap on {instance_name}")
     ax.legend()
     fig.tight_layout()
 
@@ -350,7 +322,6 @@ def plot_wasserstein_distributional_diagnostic(
         x_grid,
         exact_opt_density,
         linewidth=1.5,
-        linestyle="--",
         label=r"Exact optimum $P^{w_\gamma^\star}$",
         zorder=3,
     )
@@ -367,7 +338,6 @@ def plot_wasserstein_distributional_diagnostic(
         x_grid,
         reference_density,
         linewidth=1.5,
-        linestyle="-.",
         label=r"Reference $Q$",
         zorder=3,
     )
@@ -384,11 +354,15 @@ def plot_wasserstein_distributional_diagnostic(
         hist,
         edges,
         linewidth=1.8,
-        linestyle="-",
         label=r"Empirical $\widehat P^{\bar w_T}$",
         zorder=4,
     )
 
+    ax.set_xlabel("x")
+    ax.set_ylabel("Density")
+    if title is None:
+        title = f"Distributional diagnostic on {instance.name}"
+    ax.set_title(title)
     ax.legend()
     fig.tight_layout()
 

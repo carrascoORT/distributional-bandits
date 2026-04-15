@@ -26,6 +26,8 @@ from src.plots import (
     plot_mean_weight_trajectories_by_algorithm,
     plot_mean_utility_by_algorithm,
     plot_mean_utility_gap_by_algorithm,
+    plot_mean_cumulative_regret_by_algorithm,
+    plot_mean_mc_bias_norm,
     plot_avg_weight_gap_and_time_avg_gap_by_algorithm,
     plot_wasserstein_distributional_diagnostic,
 )
@@ -115,17 +117,23 @@ def main():
     utility_name = config["utility"]["name"]
 
     diagnostics_cfg = config.get("diagnostics", {})
+
     density_cfg = diagnostics_cfg.get("density_plot", {})
     density_enabled = bool(density_cfg.get("enabled", False))
     density_instances = set(density_cfg.get("instances", []))
     density_seeds = set(density_cfg.get("seeds", []))
     density_algorithms = set(density_cfg.get("algorithms", []))
-    density_bw_method = density_cfg.get("bw_method", None)
     density_n_grid = int(density_cfg.get("n_grid", 500))
+    density_n_bins = int(density_cfg.get("n_bins", 40))
+
+    bias_plot_cfg = diagnostics_cfg.get("bias_plot", {})
+    mc_bias_enabled = bool(bias_plot_cfg.get("enabled", False))
+    mc_bias_n = int(bias_plot_cfg.get("n_mc", 256))
 
     raw_base = ROOT / config["output"]["raw_dir"] / experiment_name
     processed_base = ROOT / config["output"]["processed_dir"] / experiment_name
     figures_base = ROOT / config["output"]["figures_dir"] / experiment_name
+
     if save_raw:
         raw_base.mkdir(parents=True, exist_ok=True)
     processed_base.mkdir(parents=True, exist_ok=True)
@@ -150,6 +158,10 @@ def main():
         gap_dict = {k: [] for k in algorithm_keys}
         avg_weight_gap_dict = {k: [] for k in algorithm_keys}
         time_avg_gap_dict = {k: [] for k in algorithm_keys}
+        regret_dict = {k: [] for k in algorithm_keys}
+
+        mc_bias_inf_dict = {k: [] for k in algorithm_keys}
+        mc_bias_l2_dict = {k: [] for k in algorithm_keys}
 
         instance_raw_dir = None
         if save_raw:
@@ -166,30 +178,45 @@ def main():
 
             for seed in seeds:
                 algorithm = build_algorithm_from_config(algorithm_cfg, K=instance.K, gamma=gamma)
+
+                use_mc_bias = mc_bias_enabled and algorithm_key in {
+                    "variance_if_ascent",
+                    "wasserstein_if_ascent_empirical",
+                }
+
                 results = run_single_experiment(
                     instance=instance,
                     algorithm=algorithm,
                     T=T,
                     seed=seed,
                     utility=utility,
+                    mc_bias_n=mc_bias_n if use_mc_bias else None,
                 )
 
-                # Overwrite the ambiguous internal name with the resolved key.
                 results["algorithm_name"] = algorithm_key
+
+                final_weights = results["weights"][-1]
+                final_avg_weights = results["average_weights"][-1]
+
+                utility_values = results["utility_values"]
+                avg_weight_utility_values = results["avg_weight_utility_values"]
+
+                utility_gap_traj = u_star - utility_values
+                avg_weight_gap_traj = u_star - avg_weight_utility_values
+                cumulative_regret_traj = np.cumsum(utility_gap_traj)
+
+                t_grid = np.arange(1, len(cumulative_regret_traj) + 1)
+                time_avg_gap_traj = cumulative_regret_traj / t_grid
+
+                results["utility_gap_values"] = utility_gap_traj
+                results["avg_weight_gap_values"] = avg_weight_gap_traj
+                results["cumulative_regret_values"] = cumulative_regret_traj
+                results["time_avg_gap_values"] = time_avg_gap_traj
+                results["final_average_weights"] = final_avg_weights.copy()
 
                 if save_raw:
                     save_results_npz(results, algo_raw_dir / f"seed_{seed}.npz")
                     save_metadata_json(results, algo_raw_dir / f"seed_{seed}.json")
-
-                final_weights = results["weights"][-1]
-                final_avg_weights = results["average_weights"][-1]
-                utility_values = results["utility_values"]
-                utility_gap_traj = u_star - utility_values
-                avg_weight_utility_values = results["avg_weight_utility_values"]
-                avg_weight_gap_traj = u_star - avg_weight_utility_values
-                cumulative_gap = np.cumsum(utility_gap_traj)
-                t_grid = np.arange(1, len(cumulative_gap) + 1)
-                time_avg_gap_traj = cumulative_gap / t_grid
 
                 row = {
                     "experiment_name": experiment_name,
@@ -201,11 +228,15 @@ def main():
                     "u_star": float(u_star),
                     "final_utility": float(utility_values[-1]),
                     "mean_utility": float(np.mean(utility_values)),
+                    "final_avg_utility": float(avg_weight_utility_values[-1]),
                     "final_gap": float(utility_gap_traj[-1]),
                     "mean_gap": float(np.mean(utility_gap_traj)),
                     "final_avg_weight_gap": float(avg_weight_gap_traj[-1]),
                     "final_time_avg_gap": float(time_avg_gap_traj[-1]),
+                    "final_cumulative_regret": float(cumulative_regret_traj[-1]),
                     "l1_error_to_w_star": float(np.sum(np.abs(final_avg_weights - w_star))),
+                    "final_mc_bias_inf": float(results["mc_bias_inf_values"][-1]) if "mc_bias_inf_values" in results else np.nan,
+                    "final_mc_bias_l2": float(results["mc_bias_l2_values"][-1]) if "mc_bias_l2_values" in results else np.nan,
                     **{f"final_w_{k}": float(final_weights[k]) for k in range(instance.K)},
                     **{f"final_avg_w_{k}": float(final_avg_weights[k]) for k in range(instance.K)},
                     **{f"w_star_{k}": float(w_star[k]) for k in range(instance.K)},
@@ -218,8 +249,13 @@ def main():
                 gap_dict[algorithm_key].append(utility_gap_traj)
                 avg_weight_gap_dict[algorithm_key].append(avg_weight_gap_traj)
                 time_avg_gap_dict[algorithm_key].append(time_avg_gap_traj)
+                regret_dict[algorithm_key].append(cumulative_regret_traj)
 
-                # Distributional diagnostic: only exact optimum vs empirical KDE at bar w_T vs Q.
+                if "mc_bias_inf_values" in results:
+                    mc_bias_inf_dict[algorithm_key].append(results["mc_bias_inf_values"])
+                if "mc_bias_l2_values" in results:
+                    mc_bias_l2_dict[algorithm_key].append(results["mc_bias_l2_values"])
+
                 should_make_density_plot = (
                     density_enabled
                     and utility_name == "wasserstein"
@@ -237,8 +273,8 @@ def main():
                         avg_weights_T=results["average_weights"][-1],
                         actions=results["actions"],
                         rewards=results["rewards"],
-                        bw_method=density_bw_method,
                         n_grid=density_n_grid,
+                        n_bins=density_n_bins,
                         title=f"{instance_name} - seed {seed}",
                         show=False,
                     )
@@ -250,10 +286,11 @@ def main():
 
                 print(
                     f"Finished instance={instance_name}, algorithm={algorithm_key}, seed={seed} "
-                    f"| final_gap={row['final_gap']:.6f}"
+                    f"| final_gap={row['final_gap']:.6f} | final_regret={row['final_cumulative_regret']:.6f}"
                 )
 
         pd.DataFrame(summary_rows).to_csv(processed_base / f"{instance_name}_summary.csv", index=False)
+
         with open(processed_base / f"{instance_name}_metadata.json", "w", encoding="utf-8") as f:
             json.dump(
                 {
@@ -263,13 +300,14 @@ def main():
                     "algorithm_names": algorithm_keys,
                     "T": T,
                     "seeds": seeds,
-                    "n_seeds": len(seeds),
                     "gamma": gamma,
                     "w_star": w_star.tolist(),
                     "u_star": float(u_star),
                     "optimizer_success": bool(opt_result.success),
                     "optimizer_message": str(opt_result.message),
                     "save_raw": save_raw,
+                    "mc_bias_enabled": mc_bias_enabled,
+                    "mc_bias_n": mc_bias_n,
                     "density_plot_enabled": density_enabled,
                 },
                 f,
@@ -310,6 +348,36 @@ def main():
         )
         save_figure(fig4, figures_base / f"{instance_name}_avg_weight_and_time_avg_gap.pdf")
         plt.close(fig4)
+
+        fig5, _ = plot_mean_cumulative_regret_by_algorithm(
+            regret_dict=regret_dict,
+            instance_name=instance.name,
+            show=False,
+        )
+        save_figure(fig5, figures_base / f"{instance_name}_mean_cumulative_regret.pdf")
+        plt.close(fig5)
+
+        bias_algorithms = {k: v for k, v in mc_bias_inf_dict.items() if len(v) > 0}
+        if mc_bias_enabled and len(bias_algorithms) > 0:
+            fig6, _ = plot_mean_mc_bias_norm(
+                mc_bias_dict=bias_algorithms,
+                instance_name=instance.name,
+                ylabel=r"$\|B_t\|_\infty$",
+                show=False,
+            )
+            save_figure(fig6, figures_base / f"{instance_name}_mean_mc_bias_inf.pdf")
+            plt.close(fig6)
+
+        bias_algorithms_l2 = {k: v for k, v in mc_bias_l2_dict.items() if len(v) > 0}
+        if mc_bias_enabled and len(bias_algorithms_l2) > 0:
+            fig7, _ = plot_mean_mc_bias_norm(
+                mc_bias_dict=bias_algorithms_l2,
+                instance_name=instance.name,
+                ylabel=r"$\|B_t\|_2$",
+                show=False,
+            )
+            save_figure(fig7, figures_base / f"{instance_name}_mean_mc_bias_l2.pdf")
+            plt.close(fig7)
 
     pd.DataFrame(global_summary_rows).to_csv(processed_base / "all_instances_summary.csv", index=False)
 

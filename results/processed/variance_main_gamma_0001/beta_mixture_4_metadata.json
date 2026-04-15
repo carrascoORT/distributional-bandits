@@ -1,10 +1,10 @@
 {
-  "experiment_name": "wasserstein_main_gamma_0001",
+  "experiment_name": "variance_main_gamma_0001",
   "instance_name": "beta_mixture_4",
-  "utility_name": "wasserstein",
+  "utility_name": "variance",
   "algorithm_names": [
-    "wasserstein_if_ascent_exact",
-    "wasserstein_if_ascent_empirical"
+    "variance_mirror_ascent",
+    "variance_if_ascent"
   ],
   "T": 500,
   "seeds": [
@@ -21,16 +21,16 @@
   ],
   "gamma": 0.001,
   "w_star": [
-    0.3239778859280719,
-    0.3239778860406895,
-    0.2185976342430678,
-    0.13344659378817078
+    0.49900000000000067,
+    0.49899999999999944,
+    0.0010000000000000005,
+    0.0009999999999999996
   ],
-  "u_star": -0.0001470982778526291,
+  "u_star": 0.1043924611973393,
   "optimizer_success": true,
   "optimizer_message": "Optimization terminated successfully",
   "save_raw": false,
   "mc_bias_enabled": true,
   "mc_bias_n": 512,
-  "density_plot_enabled": true
+  "density_plot_enabled": false
 }

@@ -129,6 +129,7 @@ class VarianceIFAscent(BanditAlgorithm):
         self.counts = np.zeros(K, dtype=float)
         self.sum_rewards = np.zeros(K, dtype=float)
         self.sum_sq_rewards = np.zeros(K, dtype=float)
+        self.instance = None
 
     def reset(self, rng: np.random.Generator, instance=None, utility=None):
         super().reset(rng)
@@ -138,6 +139,9 @@ class VarianceIFAscent(BanditAlgorithm):
         self.counts[:] = 0.0
         self.sum_rewards[:] = 0.0
         self.sum_sq_rewards[:] = 0.0
+        self.instance = instance
+        if self.instance is None:
+            raise ValueError("VarianceIFAscent.reset requires instance=...")
         if self.gamma > 0.0:
             self.w = kl_project_to_truncated_simplex(self.w, self.gamma)
 
@@ -160,15 +164,68 @@ class VarianceIFAscent(BanditAlgorithm):
         numer = self.sum_sq_rewards + self.prior_count * self.prior_second_moment
         return numer / denom
 
-    def update(self, action: int, reward: float):
+    def _exact_phi(self, reward: float) -> float:
+        mu = self.instance.means()
+        m2 = self.instance.second_moments()
+        mu_w = float(np.dot(self.w, mu))
+        u_w = float(np.dot(self.w, m2) - mu_w**2)
+        return (reward - mu_w) ** 2 - u_w
+
+    def _plugin_phi(self, reward: float) -> float:
         mu_hat = self.empirical_means()
         m2_hat = self.empirical_second_moments()
         mu_w_hat = float(np.dot(self.w, mu_hat))
         u_w_hat = float(np.dot(self.w, m2_hat) - mu_w_hat**2)
-        phi_hat = (reward - mu_w_hat) ** 2 - u_w_hat
+        return (reward - mu_w_hat) ** 2 - u_w_hat
+
+    def _single_exact_gradient(self, action: int, reward: float) -> np.ndarray:
         e_a = np.zeros(self.K, dtype=float)
         e_a[action] = 1.0
-        g = (e_a - self.w) * phi_hat
+        return (e_a - self.w) * self._exact_phi(reward)
+
+    def _single_plugin_gradient(self, action: int, reward: float) -> np.ndarray:
+        e_a = np.zeros(self.K, dtype=float)
+        e_a[action] = 1.0
+        return (e_a - self.w) * self._plugin_phi(reward)
+
+    def estimate_conditional_bias_mc(
+        self,
+        rng: np.random.Generator,
+        n_mc: int = 256,
+    ) -> dict:
+        """
+        Monte Carlo estimate of
+            B_t = E[\hat g_t | F_{t-1}] - E[g_t | F_{t-1}]
+        at the current pre-update state.
+        """
+        if self.instance is None:
+            raise ValueError("estimate_conditional_bias_mc requires instance to be set.")
+        if n_mc <= 0:
+            raise ValueError("n_mc must be positive.")
+
+        ghat_sum = np.zeros(self.K, dtype=float)
+        gexact_sum = np.zeros(self.K, dtype=float)
+
+        for _ in range(n_mc):
+            action = int(rng.choice(self.K, p=self.w))
+            reward = float(self.instance.sample(action, rng))
+            ghat_sum += self._single_plugin_gradient(action, reward)
+            gexact_sum += self._single_exact_gradient(action, reward)
+
+        ghat_mean = ghat_sum / float(n_mc)
+        gexact_mean = gexact_sum / float(n_mc)
+        bias = ghat_mean - gexact_mean
+
+        return {
+            "mc_gradient_mean": ghat_mean,
+            "exact_gradient_mean": gexact_mean,
+            "mc_bias_vector": bias,
+            "mc_bias_inf": float(np.max(np.abs(bias))),
+            "mc_bias_l2": float(np.linalg.norm(bias)),
+        }
+
+    def update(self, action: int, reward: float):
+        g = self._single_plugin_gradient(action, reward)
         self.h = self.h + self.step_size() * g
         p = softmax(self.h)
         self.w = kl_project_to_truncated_simplex(p, self.gamma) if self.gamma > 0.0 else p
@@ -334,10 +391,8 @@ class WassersteinIFAscent(BanditAlgorithm):
     ) -> dict:
         """
         Monte Carlo estimate of
-            B_t = E[hat g_t | F_{t-1}] - g_t
+            B_t = E[\hat g_t | F_{t-1}] - g_t
         at the current pre-update state.
-
-        This is intended for the plug-in IF method (mixture_source='empirical').
         """
         if self.instance is None or self.utility is None:
             raise ValueError("estimate_conditional_bias_mc requires instance and utility to be set.")

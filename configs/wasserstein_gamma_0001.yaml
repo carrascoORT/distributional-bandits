@@ -11,7 +11,7 @@ utility:
   squared: true
   target:
     family: uniform
-    a: -1.0
+    a: 0.0
     b: 1.0
   n_grid: 401
   quantile_eps: 1.0e-4
@@ -23,9 +23,6 @@ constraint:
   gamma: 0.001
 
 algorithms:
-  - name: wasserstein_mirror_ascent
-    eta0: 1.0
-
   - name: wasserstein_if_ascent
     eta0: 1.0
     mixture_source: exact
@@ -51,11 +48,14 @@ diagnostics:
   save_utility_gap: true
   save_cumulative_regret: true
   save_bias_norm: true
+  bias_plot:
+    enabled: true
+    n_mc: 512
   density_plot:
     enabled: true
     seeds: [100]
     instances: [beta_mixture_4]
     algorithms:
       - wasserstein_if_ascent_empirical
-    bw_method: null
     n_grid: 500
+    n_bins: 12

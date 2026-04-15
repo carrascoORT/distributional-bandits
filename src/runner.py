@@ -49,8 +49,8 @@ def run_single_experiment(
         if (
             mc_bias_n is not None
             and mc_bias_n > 0
-            and getattr(algorithm, "name", "") == "wasserstein_if_ascent_empirical"
             and hasattr(algorithm, "estimate_conditional_bias_mc")
+            and getattr(algorithm, "name", "") in {"variance_if_ascent", "wasserstein_if_ascent_empirical"}
         ):
             mc_diag = algorithm.estimate_conditional_bias_mc(mc_rng, n_mc=mc_bias_n)
             mc_bias_vector_values.append(np.asarray(mc_diag["mc_bias_vector"], dtype=float))
