@@ -31,6 +31,6 @@
   "optimizer_message": "Optimization terminated successfully",
   "save_raw": false,
   "mc_bias_enabled": true,
-  "mc_bias_n": 512,
+  "mc_bias_n": 2048,
   "density_plot_enabled": true
 }
