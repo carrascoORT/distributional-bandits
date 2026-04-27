@@ -1,0 +1,61 @@
+experiment_name: sc2w
+
+horizon: 2000
+n_seeds: 500
+seed_start: 100
+seed_step: 100
+
+utility:
+  name: wasserstein
+  order: 2
+  squared: true
+  target:
+    family: uniform
+    a: 0.0
+    b: 1.0
+  n_grid: 401
+  quantile_eps: 1.0e-4
+  target_quantile:
+    mode: formula
+    grid_size: 4001
+
+constraint:
+  gamma: 0.03
+
+algorithms:
+  - name: wasserstein_if_ascent
+    eta0: 0.5
+    mixture_source: exact
+    prior_count: 0.5
+
+  - name: wasserstein_if_ascent
+    eta0: 0.5
+    mixture_source: empirical
+    prior_count: 0.5
+
+instances:
+  - beta_mixture_4
+
+output:
+  save_raw: false
+  raw_dir: results/raw
+  processed_dir: results/processed
+  figures_dir: results/figures
+
+diagnostics:
+  save_summary_table: true
+  save_weight_error: true
+  save_utility_gap: true
+  save_cumulative_regret: true
+  save_bias_norm: true
+  bias_plot:
+    enabled: true
+    n_mc: 1000
+  density_plot:
+    enabled: true
+    seeds: [100]
+    instances: [gaussian_30_random]
+    algorithms:
+      - wasserstein_if_ascent_empirical
+    n_grid: 500
+    n_bins: 12

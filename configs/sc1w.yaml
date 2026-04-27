@@ -1,7 +1,7 @@
-experiment_name: wasserstein_main_gamma_0001
+experiment_name: wasserstein_beta_gamma_003
 
-horizon: 500
-n_seeds: 10
+horizon: 2000
+n_seeds: 500
 seed_start: 100
 seed_step: 100
 
@@ -20,27 +20,34 @@ utility:
     grid_size: 4001
 
 constraint:
-  gamma: 0.001
+  gamma: 0.03
 
 algorithms:
   - name: wasserstein_if_ascent
-    eta0: 1.0
+    eta0: 2
     mixture_source: exact
     prior_count: 0.5
 
   - name: wasserstein_if_ascent
-    eta0: 1.0
+    eta0: 2
     mixture_source: empirical
     prior_count: 0.5
 
 instances:
-  - beta_mixture_4
+  - name: beta_mixture_2
+    arms:
+      - family: beta
+        alpha: 2.0
+        beta: 2.0
+      - family: beta
+        alpha: 4.0
+        beta: 2.0
 
 output:
   save_raw: false
   raw_dir: results/raw
   processed_dir: results/processed
-  figures_dir: results/figures
+  figures_dir: results/figures/sc1
 
 diagnostics:
   save_summary_table: true
@@ -50,11 +57,11 @@ diagnostics:
   save_bias_norm: true
   bias_plot:
     enabled: true
-    n_mc: 512
+    n_mc: 1000
   density_plot:
     enabled: true
     seeds: [100]
-    instances: [beta_mixture_4]
+    instances: [beta_mixture_2]
     algorithms:
       - wasserstein_if_ascent_empirical
     n_grid: 500

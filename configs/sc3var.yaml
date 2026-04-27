@@ -1,0 +1,55 @@
+experiment_name: sc3var
+
+horizon: 2000
+n_seeds: 500
+seed_start: 100
+seed_step: 100
+
+utility:
+  name: variance
+
+constraint:
+  gamma: 0.03
+
+algorithms:
+  - name: variance_mirror_ascent
+    eta0: 0.5
+
+  - name: variance_if_ascent
+    eta0: 0.5
+    prior_mean: 0.0
+    prior_second_moment: 1.0
+    prior_count: 0.5
+
+instances:
+  - name: beta_mixture_8
+    family: beta
+    params:
+      alpha: [2, 2, 2, 2, 2, 2, 2, 2]
+      beta:  [1, 4, 7, 10, 13, 16, 19, 22]
+      a: 0.0
+      b: 1.0
+
+output:
+  save_raw: false
+  raw_dir: results/raw
+  processed_dir: results/processed
+  figures_dir: results/figures
+
+diagnostics:
+  save_summary_table: true
+  save_weight_error: true
+  save_utility_gap: true
+  save_cumulative_regret: true
+  save_bias_norm: true
+  bias_plot:
+    enabled: true
+    n_mc: 1000
+  density_plot:
+    enabled: true
+    seeds: [100]
+    instances: [beta_mixture_8]
+    algorithms:
+      - variance_if_ascent
+    n_grid: 500
+    n_bins: 12
